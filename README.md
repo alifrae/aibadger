@@ -65,29 +65,9 @@ Also available with an official [VS Code companion](https://marketplace.visualst
 
 ## Agent Skills
 
-Badger provides two Agent Skills for moving an active AI coding session into
-Badger:
-
-- `handoff` transfers coding, debugging, planning, or architecture work.
-- `badger-review` requests an independent Badger review of recent repository
-  work.
-
-Install both through the [skills.sh](https://skills.sh/PVRLabs/aibadger)
-ecosystem:
-
-```bash
-npx skills add PVRLabs/aibadger
-```
-
-Or install the copies bundled with Badger, entirely offline:
-
-```bash
-badger skills install
-```
-
-To complete the workflow, the `badger` CLI must be installed and available on
-`PATH`. See [docs/usage.md](docs/usage.md#install-the-official-agent-skills) for
-the workflow.
+Badger includes the `handoff` and `badger-review` skills for continuing an AI
+coding session or requesting an independent review. See the [Agent Skills
+guide](skills/README.md) for installation, usage, and details.
 
 ## Quick Start
 
