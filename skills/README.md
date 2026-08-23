@@ -54,7 +54,11 @@ exact command to run in a separate terminal:
 badger continue
 ```
 
-Badger reads and removes the handoff file after accepting it.
+Badger reads and removes the handoff file after accepting it, then prepares a
+prompt you can copy to the clipboard for use in a browser AI chat or another
+agent. See [Continue from another AI coding
+session](../docs/usage.md#continue-from-another-ai-coding-session) for the
+complete workflow.
 
 ## What gets transferred
 

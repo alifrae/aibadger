@@ -55,4 +55,6 @@ write only compact conversation/session context to `.badger-handoff`; they do
 not inspect repositories, collect Git state, invoke Badger, or use a
 clipboard. After a Skill reports success, run `badger continue` in a separate
 terminal from the written file's directory. Badger independently collects
-repository context for `review` and `handoff` modes.
+repository context for `review` and `handoff` modes. See [Continue from another
+AI coding session](usage.md#continue-from-another-ai-coding-session) for the
+complete workflow.
