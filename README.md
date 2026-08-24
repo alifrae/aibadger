@@ -7,8 +7,8 @@
 Get **precise, token-efficient context** on demand without uploading your entire repo or wasting tokens on irrelevant files.
 
 [![GitHub stars](https://img.shields.io/github/stars/PVRLabs/aibadger.svg)](https://github.com/PVRLabs/aibadger/stargazers)
+[![Release](https://img.shields.io/github/v/release/PVRLabs/aibadger)](https://github.com/PVRLabs/aibadger/releases/latest)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Go Version](https://img.shields.io/badge/Go-1.26+-00ADD8.svg)](go.mod)
 [![Homebrew](https://img.shields.io/badge/Homebrew-available-brightgreen)](https://github.com/PVRLabs/homebrew-tap)
 [![skills.sh](https://skills.sh/b/PVRLabs/aibadger)](https://skills.sh/PVRLabs/aibadger)
 
