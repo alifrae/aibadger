@@ -6,3 +6,4 @@ out.txt
 /badger-release
 *.test
 /bin/badger
+.agent-logs/
