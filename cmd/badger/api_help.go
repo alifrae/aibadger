@@ -99,7 +99,8 @@ Purpose:
 
 Required arguments:
   --root <project>    Existing project directory, absolute or relative.
-  --input <file>      UTF-8 file containing FILE, PREFIX, or NEAR selectors.
+  --input <file>      UTF-8 file containing FILE, PREFIX, NEAR, SYMBOL,
+                      REFERENCES, TESTS, or SEARCH selectors.
   --goal-file <file>  UTF-8 file containing the original goal.
 
 Optional arguments:
@@ -108,6 +109,12 @@ Optional arguments:
 
 Example:
   badger api extract --root . --focus code --input selectors.txt --goal-file goal.txt
+
+Selector behavior:
+  SYMBOL selects a bounded span from a known file. REFERENCES and SEARCH are
+  bounded case-sensitive literal discovery across eligible project files;
+  TESTS applies the same discovery to likely test paths. These operations are
+  not AST-, LSP-, compiler-, or type-aware semantic search.
 
 Output and side effects:
   Writes the complete prompt to stdout and diagnostics only to stderr.
@@ -167,11 +174,13 @@ Failures:
 Purpose:
   Produce supplemental current-file context for an existing Deep Review chat.
 
-The input must contain only FILE, PREFIX, or NEAR selectors, one per line.
-Normal findings need no continuation call; mixed findings and selectors are
-rejected. Output omits the initial diff and changed-file context. Files reflect
-the filesystem at continuation time and may be newer than the initial review.
-The operation is non-interactive, read-only, and provider-independent.
+The input must contain only FILE, PREFIX, NEAR, SYMBOL, REFERENCES, TESTS, or
+SEARCH selectors, one per line. Discovery selectors are bounded literal local
+searches, not semantic code-index queries. Normal findings need no continuation
+call; mixed findings and selectors are rejected. Output omits the initial diff
+and changed-file context. Files reflect the filesystem at continuation time and
+may be newer than the initial review. The operation is non-interactive,
+read-only, and provider-independent.
 `)
 	default:
 		fmt.Fprint(w, `Usage:
