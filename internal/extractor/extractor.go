@@ -187,7 +187,7 @@ func (e *Extractor) processExternalCommand(cmd Command) (externalCommandResult, 
 	if len(e.ExternalContext) == 0 {
 		return externalCommandResult{}, nil
 	}
-	resolution := externalcontext.ResolveFile(e.ProjectRoot, e.ExternalContext, requestPath)
+	resolution := externalcontext.ResolveFileFiltered(e.ProjectRoot, e.ExternalContext, requestPath)
 	matches := filterExternalMatchesForCommand(cmd, resolution.Matches)
 	if len(matches) > 1 {
 		return externalCommandResult{matched: true}, ambiguousExternalFileError(requestPath, matches)
