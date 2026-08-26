@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/PVRLabs/aibadger/internal/model"
 )
 
 func TestNamedExternalContextLoadsAndFilters(t *testing.T) {
