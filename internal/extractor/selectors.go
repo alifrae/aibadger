@@ -1,6 +1,7 @@
 package extractor
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -19,40 +20,48 @@ const (
 	maxSelectorScanFiles = 5000
 )
 
-func (e *Extractor) expandCommands(commands []Command) ([]Command, error) {
+var errSelectorSearchComplete = errors.New("selector search complete")
+
+func (e *Extractor) expandCommands(commands []Command) ([]Command, []string) {
 	var expanded []Command
+	var failures []string
 	seen := map[string]bool{}
 	for _, cmd := range commands {
 		var resolved []Command
 		switch cmd.Type {
 		case "SYMBOL":
 			if cmd.Path == "" || cmd.Pattern == "" {
-				return nil, fmt.Errorf("SYMBOL requires path#symbol")
+				failures = append(failures, fmt.Sprintf("%s: SYMBOL requires path#symbol", cmd.Path))
+				continue
 			}
 			resolved = []Command{{Type: "NEAR", Path: cmd.Path, Pattern: cmd.Pattern}}
 		case "REFERENCES":
 			matches, err := e.searchProject(cmd.Path, false, maxSelectorMatches)
 			if err != nil {
-				return nil, err
+				failures = append(failures, fmt.Sprintf("%s: %v", cmd.Path, err))
+				continue
 			}
 			resolved = matches
 		case "TESTS":
 			matches, err := e.searchProject(cmd.Path, true, maxTestSelectorMatch)
 			if err != nil {
-				return nil, err
+				failures = append(failures, fmt.Sprintf("%s: %v", cmd.Path, err))
+				continue
 			}
 			resolved = matches
 		case "SEARCH":
 			matches, err := e.searchProject(cmd.Path, false, maxSelectorMatches)
 			if err != nil {
-				return nil, err
+				failures = append(failures, fmt.Sprintf("%s: %v", cmd.Path, err))
+				continue
 			}
 			resolved = matches
 		default:
 			resolved = []Command{cmd}
 		}
 		if len(resolved) == 0 && isDiscoveryCommand(cmd.Type) {
-			return nil, fmt.Errorf("%s found no bounded matches for %q", cmd.Type, cmd.Path)
+			failures = append(failures, fmt.Sprintf("%s: %s found no bounded matches", cmd.Path, cmd.Type))
+			continue
 		}
 		for _, item := range resolved {
 			key := item.Type + "\x00" + item.Path + "\x00" + item.Pattern
@@ -63,7 +72,7 @@ func (e *Extractor) expandCommands(commands []Command) ([]Command, error) {
 			expanded = append(expanded, item)
 		}
 	}
-	return expanded, nil
+	return expanded, failures
 }
 
 func isDiscoveryCommand(kind string) bool {
@@ -92,6 +101,12 @@ func (e *Extractor) searchProject(literal string, testsOnly bool, limit int) ([]
 		if err != nil {
 			return nil
 		}
+		if d.Type()&os.ModeSymlink != 0 {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
 		if d.IsDir() {
 			if path != e.ProjectRoot && shouldSkipSelectorDir(d.Name()) {
 				return filepath.SkipDir
@@ -99,7 +114,7 @@ func (e *Extractor) searchProject(literal string, testsOnly bool, limit int) ([]
 			return nil
 		}
 		if len(hits) >= limit || scanned >= maxSelectorScanFiles {
-			return nil
+			return errSelectorSearchComplete
 		}
 		rel, relErr := filepath.Rel(e.ProjectRoot, path)
 		if relErr != nil {
@@ -125,7 +140,7 @@ func (e *Extractor) searchProject(literal string, testsOnly bool, limit int) ([]
 		hits = append(hits, hit{path: rel})
 		return nil
 	})
-	if err != nil {
+	if err != nil && !errors.Is(err, errSelectorSearchComplete) {
 		return nil, err
 	}
 	sort.Slice(hits, func(i, j int) bool { return hits[i].path < hits[j].path })
