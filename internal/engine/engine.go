@@ -8,8 +8,10 @@ import (
 	"github.com/PVRLabs/aibadger/internal/externalcontext"
 	"github.com/PVRLabs/aibadger/internal/extractor"
 	"github.com/PVRLabs/aibadger/internal/model"
+	"github.com/PVRLabs/aibadger/internal/projectpolicy"
 	"github.com/PVRLabs/aibadger/internal/protocol"
 	"github.com/PVRLabs/aibadger/internal/scanner"
+	"github.com/PVRLabs/aibadger/internal/snapshot"
 	"github.com/PVRLabs/aibadger/internal/taggedfile"
 	"github.com/PVRLabs/aibadger/internal/writer"
 )
@@ -20,6 +22,10 @@ import (
 type Engine struct {
 	Root                 string
 	Topology             *model.ProjectTopology
+	Policy               projectpolicy.Policy
+	Snapshot             snapshot.State
+	policyErr            error
+	snapshotErr          error
 	maxFilesPerDirectory int
 	formatter            *protocol.Formatter
 	extractor            *extractor.Extractor
@@ -29,6 +35,11 @@ type Engine struct {
 // steps. If maxFilesPerDir is 0, scanning is unlimited.
 func New(root string, maxFilesPerDir int) (*Engine, error) {
 	if err := CheckDisabled(root); err != nil {
+		return nil, err
+	}
+
+	policy, state, err := loadP0State(root)
+	if err != nil {
 		return nil, err
 	}
 
@@ -42,6 +53,8 @@ func New(root string, maxFilesPerDir int) (*Engine, error) {
 	return &Engine{
 		Root:                 root,
 		Topology:             topology,
+		Policy:               policy,
+		Snapshot:             state,
 		maxFilesPerDirectory: maxFilesPerDir,
 		formatter:            protocol.NewFormatter(),
 		extractor:            extractor.NewExtractor(root, topology),
@@ -51,11 +64,17 @@ func New(root string, maxFilesPerDir int) (*Engine, error) {
 // FromTopology creates an engine around an existing topology. This is useful
 // when the caller already owns scan timing or summary output.
 func FromTopology(root string, topology *model.ProjectTopology) *Engine {
+	policy, policyErr := projectpolicy.Load(root)
+	state, snapshotErr := snapshot.Capture(root)
 	return &Engine{
-		Root:      root,
-		Topology:  topology,
-		formatter: protocol.NewFormatter(),
-		extractor: extractor.NewExtractor(root, topology),
+		Root:        root,
+		Topology:    topology,
+		Policy:      policy,
+		Snapshot:    state,
+		policyErr:   policyErr,
+		snapshotErr: snapshotErr,
+		formatter:   protocol.NewFormatter(),
+		extractor:   extractor.NewExtractor(root, topology),
 	}
 }
 
@@ -104,38 +123,60 @@ func (e *Engine) GenerateMapDetailed(goal string) (string, []string) {
 		return "", nil
 	}
 	taggedFiles, warnings := e.resolveTaggedFiles(goal)
-	return e.formatter.GenerateSchemaAWithTaggedFiles(e.Topology, goal, taggedFiles), warnings
+	prompt := e.formatter.GenerateSchemaAWithTaggedFiles(e.Topology, goal, taggedFiles)
+	prompt, policyWarnings := e.decorateMap(prompt)
+	warnings = append(warnings, policyWarnings...)
+	return prompt, warnings
 }
 
 // ParseCommands parses FILE/PREFIX/NEAR extraction commands.
 func (e *Engine) ParseCommands(input string) []extractor.Command {
-	return e.extractor.ParseCommands(input)
+	clean, err := e.parseSnapshotInput(input)
+	if err != nil {
+		return nil
+	}
+	return e.extractor.ParseCommands(clean)
 }
 
 // ParseCommandsDetailed parses selectors and preserves malformed-line
 // diagnostics for non-interactive callers.
 func (e *Engine) ParseCommandsDetailed(input string) extractor.CommandParseResult {
-	return e.extractor.ParseCommandsDetailed(input)
+	clean, err := e.parseSnapshotInput(input)
+	if err != nil {
+		return extractor.CommandParseResult{Failures: []string{err.Error()}}
+	}
+	return e.extractor.ParseCommandsDetailed(clean)
 }
 
 func (e *Engine) ParseStrictCommandsDetailed(input string) extractor.CommandParseResult {
-	return e.extractor.ParseStrictCommandsDetailed(input)
+	clean, err := e.parseSnapshotInput(input)
+	if err != nil {
+		return extractor.CommandParseResult{Failures: []string{err.Error()}}
+	}
+	return e.extractor.ParseStrictCommandsDetailed(clean)
 }
 
 // GenerateReviewContinuation extracts current files and renders supplemental
 // context without repeating the initial review prompt.
 func (e *Engine) GenerateReviewContinuation(commands []extractor.Command) (string, []protocol.ExtractionMetadata, int, []string, []string, error) {
 	extractions, err := e.extractor.Extract(commands)
+	var failures, exclusions []string
 	if err != nil {
 		var extractionErr *extractor.ExtractionError
 		if errors.As(err, &extractionErr) && extractionErr.CanProceed && len(extractions) > 0 {
-			prompt, metadata := e.formatter.GenerateReviewContinuation(extractions)
-			return prompt, metadata, len(extractions), append([]string(nil), extractionErr.Failures...), append([]string(nil), extractionErr.Excluded...), nil
+			failures = append(failures, extractionErr.Failures...)
+			exclusions = append(exclusions, extractionErr.Excluded...)
+		} else {
+			return "", nil, 0, nil, nil, err
 		}
-		return "", nil, 0, nil, nil, err
 	}
+	extractions, notices, err := e.filterEgress(extractions)
+	if err != nil {
+		return "", nil, 0, failures, append(exclusions, notices...), err
+	}
+	exclusions = append(exclusions, notices...)
 	prompt, metadata := e.formatter.GenerateReviewContinuation(extractions)
-	return prompt, metadata, len(extractions), nil, nil, nil
+	return prompt, metadata, len(extractions), failures, exclusions, nil
 }
 
 // GenerateContextDetailed extracts requested source and returns partial
@@ -143,16 +184,23 @@ func (e *Engine) GenerateReviewContinuation(commands []extractor.Command) (strin
 // with the usable context.
 func (e *Engine) GenerateContextDetailed(goal string, commands []extractor.Command) (string, []protocol.ExtractionMetadata, int, []string, []string, error) {
 	extractions, err := e.extractor.Extract(commands)
+	var failures, exclusions []string
 	if err != nil {
 		var extractionErr *extractor.ExtractionError
 		if errors.As(err, &extractionErr) && extractionErr.CanProceed && len(extractions) > 0 {
-			schema, metadata := e.formatter.GenerateSchemaB(e.Topology, extractions, goal)
-			return schema, metadata, len(extractions), append([]string(nil), extractionErr.Failures...), append([]string(nil), extractionErr.Excluded...), nil
+			failures = append(failures, extractionErr.Failures...)
+			exclusions = append(exclusions, extractionErr.Excluded...)
+		} else {
+			return "", nil, 0, nil, nil, err
 		}
-		return "", nil, 0, nil, nil, err
 	}
+	extractions, notices, err := e.filterEgress(extractions)
+	if err != nil {
+		return "", nil, 0, failures, append(exclusions, notices...), err
+	}
+	exclusions = append(exclusions, notices...)
 	schema, metadata := e.formatter.GenerateSchemaB(e.Topology, extractions, goal)
-	return schema, metadata, len(extractions), nil, nil, nil
+	return schema, metadata, len(extractions), failures, exclusions, nil
 }
 
 // ParseWritePlanDetailed extracts planned file operations, preserves non-file
@@ -162,14 +210,25 @@ func (e *Engine) ParseWritePlanDetailed(input string) writer.ParseResult {
 	for _, path := range e.externalWriteTargets(input) {
 		result.Errors = append(result.Errors, externalContextWriteError(path))
 	}
-	return e.rejectExternalContextUpdates(result)
+	result = e.rejectExternalContextUpdates(result)
+	kept := result.Updates[:0]
+	for _, update := range result.Updates {
+		if err := e.validateUpdatePolicy(update); err != nil {
+			result.Errors = append(result.Errors, err)
+			continue
+		}
+		kept = append(kept, update)
+	}
+	result.Updates = kept
+	return result
 }
 
 // ApplyUpdate applies a single planned file operation relative to the project
-// root.
+// root. Callers applying a batch should validate the write base once before
+// applying the first update.
 func (e *Engine) ApplyUpdate(update writer.FileUpdate, mode writer.WhitespaceMode) error {
-	if e.isExternalContextPath(update.Path) {
-		return externalContextWriteError(update.Path)
+	if err := e.validateUpdatePolicy(update); err != nil {
+		return err
 	}
 	return writer.WriteFile(e.Root, update, mode)
 }
@@ -233,6 +292,10 @@ func (e *Engine) rejectExternalContextUpdates(result writer.ParseResult) writer.
 	}
 	kept := result.Updates[:0]
 	for _, update := range result.Updates {
+		if update.Kind == writer.UpdateKindPatch {
+			kept = append(kept, update)
+			continue
+		}
 		if e.isExternalContextPath(update.Path) {
 			result.Errors = append(result.Errors, externalContextWriteError(update.Path))
 			continue
