@@ -62,19 +62,17 @@ func ResolveFileFiltered(projectRoot string, contexts []model.ExternalContext, r
 	return FileResolution{Matches: filtered}
 }
 
-// IsDisplayPath reports whether a path addresses a named read-only external
-// source. Both @label/path and label/path are recognized because tagged-file
-// parsing consumes the leading @ before resolution.
+// IsDisplayPath reports whether a path uses a named external source's canonical
+// @label display namespace.
 func IsDisplayPath(contexts []model.ExternalContext, path string) bool {
 	path = filepath.ToSlash(filepath.Clean(strings.TrimSpace(path)))
 	for _, ctx := range contexts {
 		if ctx.Label == "" {
 			continue
 		}
-		for _, prefix := range []string{"@" + ctx.Label, ctx.Label} {
-			if path == prefix || strings.HasPrefix(path, prefix+"/") {
-				return true
-			}
+		prefix := "@" + ctx.Label
+		if path == prefix || strings.HasPrefix(path, prefix+"/") {
+			return true
 		}
 	}
 	return false
