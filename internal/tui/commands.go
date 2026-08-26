@@ -11,6 +11,8 @@ import (
 	"github.com/PVRLabs/aibadger/internal/engine"
 	"github.com/PVRLabs/aibadger/internal/extractor"
 	"github.com/PVRLabs/aibadger/internal/github"
+	"github.com/PVRLabs/aibadger/internal/postapply"
+	"github.com/PVRLabs/aibadger/internal/verification"
 	"github.com/PVRLabs/aibadger/internal/workflow"
 	"github.com/PVRLabs/aibadger/internal/writer"
 	tea "github.com/charmbracelet/bubbletea"
@@ -93,8 +95,24 @@ func reviewContinuationCmd(session *workflow.Session, commands []extractor.Comma
 
 func writeCmd(session *workflow.Session, updates []writer.FileUpdate) tea.Cmd {
 	return func() tea.Msg {
+		capture, err := postapply.Begin(session.Engine.Root, updates)
+		if err != nil {
+			return writeDoneMsg{errs: []error{fmt.Errorf("capturing pre-apply state: %w", err)}}
+		}
+		defer capture.Cleanup()
+
 		applied, errs := session.ApplyWrites(updates)
-		return writeDoneMsg{updates: applied, errs: errs}
+		landed, diffErr := capture.Finish()
+		if diffErr != nil {
+			errs = append(errs, fmt.Errorf("capturing post-apply delta: %w", diffErr))
+		}
+		return writeDoneMsg{updates: applied, errs: errs, postApply: landed}
+	}
+}
+
+func verificationCmd(root string, command []string) tea.Cmd {
+	return func() tea.Msg {
+		return verificationDoneMsg{result: verification.Run(root, command)}
 	}
 }
 
