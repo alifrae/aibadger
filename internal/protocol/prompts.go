@@ -74,11 +74,11 @@ const codeSchemaBConstraint = "\n[TASK]\n%s\n\n[OUTPUT CONSTRAINT]\n" +
 	"\n" +
 	"Output format rules:\n" +
 	"1. For updated or new files:\n" +
-	"--- File: <path/from_project_root> ---\n" +
+	"--- File: <path/from/project_root> ---\n" +
 	"<full updated file contents>\n" +
 	"--- End File ---\n\n" +
 	"2. For explicit file deletion:\n" +
-	"--- Delete File: <path/from_project_root> ---\n\n" +
+	"--- Delete File: <path/from/project_root> ---\n\n" +
 	"3. For non-code responses: Just write the text normally.\n"
 
 const reviewSchemaBConstraint = "\n[TASK]\n%s\n\n[OUTPUT CONSTRAINT]\n" +
