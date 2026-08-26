@@ -34,6 +34,11 @@ func TestApplyUnifiedDiff(t *testing.T) {
 		t.Skip("git unavailable")
 	}
 	root := t.TempDir()
+	init := exec.Command("git", "init", "-q")
+	init.Dir = root
+	if output, err := init.CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v: %s", err, output)
+	}
 	if err := os.WriteFile(filepath.Join(root, "main.txt"), []byte("old\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
