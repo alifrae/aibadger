@@ -33,6 +33,20 @@ func parsePatchBlock(input string) (string, bool, error) {
 	return patch + "\n", true, nil
 }
 
+func removePatchBlock(input string) string {
+	start := strings.Index(input, patchStartMarker)
+	if start < 0 {
+		return input
+	}
+	remaining := input[start+len(patchStartMarker):]
+	end := strings.Index(remaining, patchEndMarker)
+	if end < 0 {
+		return input[:start]
+	}
+	end += start + len(patchStartMarker) + len(patchEndMarker)
+	return input[:start] + input[end:]
+}
+
 func PatchPaths(patch string) ([]string, error) {
 	seen := map[string]bool{}
 	var paths []string
