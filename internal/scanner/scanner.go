@@ -46,6 +46,7 @@ func (s *Scanner) Scan() (*model.ProjectTopology, error) {
 		NewJavaDetector().Detect,
 		nodeDetector.Detect,
 		NewPythonDetector().Detect,
+		NewRustDetector().Detect,
 	}
 	for _, detect := range detectors {
 		wg.Add(1)
