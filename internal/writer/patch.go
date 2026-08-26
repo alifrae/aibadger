@@ -47,40 +47,59 @@ func removePatchBlock(input string) string {
 	return input[:start] + input[end:]
 }
 
+// PatchPaths returns every repository-relative path named by a standard
+// unified-diff file header. It deliberately requires paired --- a/... and
+// +++ b/... headers (with /dev/null allowed for create/delete) so source lines
+// inside hunks that happen to begin with --- or +++ are not treated as paths.
 func PatchPaths(patch string) ([]string, error) {
+	lines := strings.Split(patch, "\n")
 	seen := map[string]bool{}
 	var paths []string
-	for _, line := range strings.Split(patch, "\n") {
-		var path string
-		switch {
-		case strings.HasPrefix(line, "+++ "):
-			path = strings.TrimSpace(strings.TrimPrefix(line, "+++ "))
-		case strings.HasPrefix(line, "--- "):
-			path = strings.TrimSpace(strings.TrimPrefix(line, "--- "))
-		default:
+	for i := 0; i+1 < len(lines); i++ {
+		if !strings.HasPrefix(lines[i], "--- ") || !strings.HasPrefix(lines[i+1], "+++ ") {
 			continue
 		}
-		if path == "/dev/null" || path == "" {
+		oldPath, oldOK, err := parseUnifiedHeaderPath(strings.TrimSpace(strings.TrimPrefix(lines[i], "--- ")), "a/")
+		if err != nil {
+			return nil, err
+		}
+		newPath, newOK, err := parseUnifiedHeaderPath(strings.TrimSpace(strings.TrimPrefix(lines[i+1], "+++ ")), "b/")
+		if err != nil {
+			return nil, err
+		}
+		if !oldOK || !newOK {
 			continue
 		}
-		path = strings.TrimPrefix(path, "a/")
-		path = strings.TrimPrefix(path, "b/")
-		if tab := strings.IndexByte(path, '\t'); tab >= 0 {
-			path = path[:tab]
-		}
-		if err := validatePlannedPath(path); err != nil {
-			return nil, fmt.Errorf("patch path %q: %w", path, err)
-		}
-		path = filepath.ToSlash(filepath.Clean(path))
-		if !seen[path] {
+		for _, path := range []string{oldPath, newPath} {
+			if path == "" || seen[path] {
+				continue
+			}
 			seen[path] = true
 			paths = append(paths, path)
 		}
+		i++
 	}
 	if len(paths) == 0 {
-		return nil, fmt.Errorf("patch contains no file paths")
+		return nil, fmt.Errorf("patch contains no valid unified-diff file headers")
 	}
 	return paths, nil
+}
+
+func parseUnifiedHeaderPath(raw, expectedPrefix string) (string, bool, error) {
+	if tab := strings.IndexByte(raw, '\t'); tab >= 0 {
+		raw = raw[:tab]
+	}
+	if raw == "/dev/null" {
+		return "", true, nil
+	}
+	if !strings.HasPrefix(raw, expectedPrefix) {
+		return "", false, nil
+	}
+	path := strings.TrimPrefix(raw, expectedPrefix)
+	if err := validatePlannedPath(path); err != nil {
+		return "", false, fmt.Errorf("patch path %q: %w", path, err)
+	}
+	return filepath.ToSlash(filepath.Clean(path)), true, nil
 }
 
 func ApplyUnifiedDiff(projectRoot, patch string) error {
