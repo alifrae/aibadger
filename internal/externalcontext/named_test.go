@@ -55,6 +55,31 @@ include = ["src/**"]
 	}
 }
 
+func TestExplicitNamedPathSelectsOnlyRequestedRoot(t *testing.T) {
+	base := t.TempDir()
+	project := filepath.Join(base, "project")
+	first := filepath.Join(base, "first")
+	second := filepath.Join(base, "second")
+	if err := os.MkdirAll(project, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	mustWriteNamedTest(t, filepath.Join(first, "src/core.rs"), "first\n")
+	mustWriteNamedTest(t, filepath.Join(second, "src/core.rs"), "second\n")
+
+	contexts := []model.ExternalContext{
+		{Path: "@first", AbsPath: first, Label: "first"},
+		{Path: "@second", AbsPath: second, Label: "second"},
+	}
+	resolution := ResolveFileFiltered(project, contexts, "@second/src/core.rs")
+	match, ok := resolution.Match()
+	if !ok {
+		t.Fatalf("explicit named path should resolve exactly once: %+v", resolution.Matches)
+	}
+	if match.Context.Label != "second" || match.DisplayPath != "@second/src/core.rs" {
+		t.Fatalf("wrong named source resolved: %+v", match)
+	}
+}
+
 func mustWriteNamedTest(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
