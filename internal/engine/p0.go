@@ -19,6 +19,9 @@ func loadP0State(root string) (projectpolicy.Policy, snapshot.State, error) {
 	if err != nil {
 		return projectpolicy.Policy{}, snapshot.State{}, err
 	}
+	if !policy.Session.RequireSnapshot {
+		return policy, snapshot.State{}, nil
+	}
 	state, err := snapshot.Capture(root)
 	if err != nil {
 		return projectpolicy.Policy{}, snapshot.State{}, err
