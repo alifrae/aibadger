@@ -35,12 +35,19 @@ type WritePolicy struct {
 	PatchOnly bool
 }
 
+type VerifyPolicy struct {
+	// Command is an argv vector executed directly, without a shell, only after
+	// the user explicitly requests verification from the post-apply screen.
+	Command []string
+}
+
 type Policy struct {
 	Security SecurityPolicy
 	Context  ContextPolicy
 	Docs     DocsPolicy
 	Session  SessionPolicy
 	Write    WritePolicy
+	Verify   VerifyPolicy
 }
 
 func Default() Policy { return Policy{} }
@@ -89,28 +96,48 @@ func Load(root string) (Policy, error) {
 	if err := validatePatterns(policy.Security.Warn); err != nil {
 		return Policy{}, fmt.Errorf("security.warn: %w", err)
 	}
+	if len(policy.Verify.Command) > 0 && strings.TrimSpace(policy.Verify.Command[0]) == "" {
+		return Policy{}, fmt.Errorf("verify.command: executable cannot be empty")
+	}
 	return policy, nil
 }
 
 func assign(policy *Policy, section, key, raw string) error {
 	switch section + "." + key {
 	case "security.deny":
-		return decodeStringArray(raw, &policy.Security.Deny)
+		return decodePathArray(raw, &policy.Security.Deny)
 	case "security.warn":
-		return decodeStringArray(raw, &policy.Security.Warn)
+		return decodePathArray(raw, &policy.Security.Warn)
 	case "security.block_secrets":
 		return decodeBool(raw, &policy.Security.BlockSecrets)
 	case "context.always_include":
-		return decodeStringArray(raw, &policy.Context.AlwaysInclude)
+		return decodePathArray(raw, &policy.Context.AlwaysInclude)
 	case "docs.canonical_roots":
-		return decodeStringArray(raw, &policy.Docs.CanonicalRoots)
+		return decodePathArray(raw, &policy.Docs.CanonicalRoots)
 	case "session.require_snapshot":
 		return decodeBool(raw, &policy.Session.RequireSnapshot)
 	case "write.patch_only":
 		return decodeBool(raw, &policy.Write.PatchOnly)
+	case "verify.command":
+		return decodeStringArray(raw, &policy.Verify.Command)
 	default:
 		return fmt.Errorf("unsupported setting %s.%s", section, key)
 	}
+}
+
+func decodePathArray(raw string, dst *[]string) error {
+	var values []string
+	if err := decodeStringArray(raw, &values); err != nil {
+		return err
+	}
+	for i := range values {
+		values[i] = normalize(values[i])
+		if values[i] == "" {
+			return fmt.Errorf("paths and patterns cannot be empty")
+		}
+	}
+	*dst = values
+	return nil
 }
 
 func decodeStringArray(raw string, dst *[]string) error {
@@ -118,10 +145,9 @@ func decodeStringArray(raw string, dst *[]string) error {
 	if err := json.Unmarshal([]byte(raw), &values); err != nil {
 		return fmt.Errorf("expected an array of double-quoted strings")
 	}
-	for i := range values {
-		values[i] = normalize(values[i])
-		if values[i] == "" {
-			return fmt.Errorf("paths and patterns cannot be empty")
+	for _, value := range values {
+		if strings.TrimSpace(value) == "" {
+			return fmt.Errorf("array values cannot be empty")
 		}
 	}
 	*dst = values
