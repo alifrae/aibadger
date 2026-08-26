@@ -130,7 +130,10 @@ func updatePaths(updates []writer.FileUpdate) ([]string, error) {
 
 func (c *Capture) copyCurrent(stage, rel string) (bool, error) {
 	source := filepath.Join(c.root, filepath.FromSlash(rel))
-	info, err := os.Lstat(source)
+	// Engine write validation is authoritative for symlink containment. Stat
+	// follows an allowed in-repository symlink so the capture reflects the same
+	// bytes that a whole-file write would actually modify.
+	info, err := os.Stat(source)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return false, nil
