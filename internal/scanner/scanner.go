@@ -14,26 +14,37 @@ type Scanner struct {
 	MaxFilesPerDirectory int // 0 = unlimited
 }
 
-func NewScanner(root string) *Scanner { return &Scanner{ProjectRoot: root} }
+// NewScanner creates a new Scanner instance.
+func NewScanner(root string) *Scanner {
+	return &Scanner{ProjectRoot: root}
+}
 
+// Scan runs language-specific detectors in parallel, then falls back to the
+// generic detector if no language detector finds modules.
 func (s *Scanner) Scan() (*model.ProjectTopology, error) {
 	start := time.Now()
-	topology := &model.ProjectTopology{ProjectRoot: s.ProjectRoot, Modules: []model.Module{}}
 
-	legacyExternal, err := externalcontext.Load(s.ProjectRoot)
+	topology := &model.ProjectTopology{
+		ProjectRoot: s.ProjectRoot,
+		Modules:     []model.Module{},
+	}
+
+	externalContext, err := externalcontext.Load(s.ProjectRoot)
 	if err != nil {
 		return nil, err
 	}
-	namedExternal, err := externalcontext.LoadNamed(s.ProjectRoot)
+	namedExternalContext, err := externalcontext.LoadNamed(s.ProjectRoot)
 	if err != nil {
 		return nil, err
 	}
-	topology.ExternalContext = append(legacyExternal, namedExternal...)
+	topology.ExternalContext = append(externalContext, namedExternalContext...)
 
 	var wg sync.WaitGroup
 	var mu sync.Mutex
+
 	nodeDetector := NewNodeDetector()
 	nodeDetector.maxFilesPerDir = s.MaxFilesPerDirectory
+
 	detectors := []func(string) ([]model.Module, error){
 		NewGoDetector().Detect,
 		NewJavaDetector().Detect,
@@ -45,6 +56,7 @@ func (s *Scanner) Scan() (*model.ProjectTopology, error) {
 		wg.Add(1)
 		go func(detect func(string) ([]model.Module, error)) {
 			defer wg.Done()
+
 			modules, detErr := detect(s.ProjectRoot)
 			if detErr == nil {
 				mu.Lock()
@@ -53,8 +65,10 @@ func (s *Scanner) Scan() (*model.ProjectTopology, error) {
 			}
 		}(detect)
 	}
+
 	wg.Wait()
 
+	// Fallback to GenericDetector if no modules found
 	usedGenericFallback := false
 	if len(topology.Modules) == 0 {
 		det := NewGenericDetector()
@@ -75,24 +89,29 @@ func (s *Scanner) Scan() (*model.ProjectTopology, error) {
 			docs = nil
 		}
 		attachDocsToTopology(topology, docs)
+
 		webResources, webErr := scanWebResources(s.ProjectRoot)
 		if webErr != nil {
 			webResources = nil
 		}
 		attachWebResourcesToTopology(topology, webResources)
 	}
+
 	opsResources, opsErr := scanOpsResources(s.ProjectRoot)
 	if opsErr != nil {
 		opsResources = nil
 	}
 	attachOpsResourcesToTopology(topology, opsResources)
+
 	resources, resErr := scanGenericResources(s.ProjectRoot)
 	if resErr != nil {
 		resources = nil
 	}
 	attachGenericResourcesToTopology(topology, resources)
 
+	// Finalize topology
 	topology.ScanTime = time.Since(start)
 	s.finalizeTopologyWithLanguageWeights(topology, languageWeights)
+
 	return topology, nil
 }
