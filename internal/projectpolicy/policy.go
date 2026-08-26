@@ -32,7 +32,8 @@ type SessionPolicy struct {
 }
 
 type WritePolicy struct {
-	PatchOnly bool
+	PatchOnly       bool
+	PostApplyReview bool
 }
 
 type VerifyPolicy struct {
@@ -118,6 +119,8 @@ func assign(policy *Policy, section, key, raw string) error {
 		return decodeBool(raw, &policy.Session.RequireSnapshot)
 	case "write.patch_only":
 		return decodeBool(raw, &policy.Write.PatchOnly)
+	case "write.post_apply_review":
+		return decodeBool(raw, &policy.Write.PostApplyReview)
 	case "verify.command":
 		return decodeStringArray(raw, &policy.Verify.Command)
 	default:
