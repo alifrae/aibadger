@@ -133,18 +133,29 @@ badger api review-continuation --root <repository> \
   [--max-payload-bytes <bytes>] [--max-file-bytes <bytes>]
 ```
 
-The input must contain only complete `FILE:`, `PREFIX:`, or `NEAR:` selectors,
-one per non-empty line. A findings-only response needs no continuation call.
+The input must contain only complete extraction selectors, one per non-empty
+line. P1 supports `FILE:`, `PREFIX:`, `NEAR:`, `SYMBOL:`, `REFERENCES:`,
+`TESTS:`, and `SEARCH:`. A findings-only response needs no continuation call.
 Badger rejects findings-only, mixed prose-and-selector, empty, and malformed
 responses rather than interpreting natural-language findings.
+
+`SYMBOL:` extracts a bounded span from a known file. `REFERENCES:` and
+`SEARCH:` perform case-sensitive literal discovery in the local project and
+return at most 12 matched-file spans. `TESTS:` performs the same kind of
+literal discovery over likely test paths and returns at most 8 spans. Discovery
+scans at most 5,000 eligible files, skips symlinks and common dependency/build
+noise, and skips binary/assets and files larger than 1 MiB. These operators are
+not AST-, LSP-, compiler-, or type-aware semantic search.
 
 Output contains compact continuation instructions and the requested context;
 it does not repeat the initial diff, changed-file blocks, guidance, or
 topology. Files are read from the current filesystem when this command runs and
 may therefore be newer than the initial review context. Existing extraction
 safety, deduplication, partial-success, and deterministic ordering rules apply.
-Warnings go to stderr. Positive byte-limit options override the normal Prompt 2
-limits; the call fails without stdout if no usable supplemental context fits.
+A discovery selector with no match is reported as a failure while other usable
+selectors may still produce output. Warnings go to stderr. Positive byte-limit
+options override the normal Prompt 2 limits; the call fails without stdout if
+no usable supplemental context fits.
 
 ### `api topology`
 
@@ -244,24 +255,26 @@ badger api extract --root <project> [--focus <code|design>] --input <selector-fi
 ```
 
 `--input <selector-file>` is a UTF-8 file containing the AI's extraction
-selectors (`FILE:`, `PREFIX:`, `NEAR:`), one per line. `--goal-file
-<goal-file>` is the same original goal that was passed to `api prompt`.
-`--focus` selects the final-answer instruction set and accepts `code` or
-`design`. It is optional for backward compatibility; omitting it uses `code`.
-Callers that use a focus for `api prompt` should pass the same focus to
-`api extract`.
+selectors (`FILE:`, `PREFIX:`, `NEAR:`, `SYMBOL:`, `REFERENCES:`, `TESTS:`, or
+`SEARCH:`), one per line. `--goal-file <goal-file>` is the same original goal
+that was passed to `api prompt`. `--focus` selects the final-answer instruction
+set and accepts `code` or `design`. It is optional for backward compatibility;
+omitting it uses `code`. Callers that use a focus for `api prompt` should pass
+the same focus to `api extract`.
 
 For example, a model response saved as `selectors.txt` might contain:
 
 ```text
 FILE:internal/client/client.go
-PREFIX:internal/client/client_test.go#func TestClientTimeout
-NEAR:internal/client/config.go#Timeout
+SYMBOL:internal/client/config.go#Timeout
+TESTS:ClientTimeout
+SEARCH:retry budget
 ```
 
-`FILE:` requests a complete file. `PREFIX:` and `NEAR:` use the text after `#`
-to locate a relevant source span. See the [Protocol](protocol.md#step-2-extract)
-for the selector matching rules.
+`FILE:` requests a complete file. `PREFIX:`, `NEAR:`, and `SYMBOL:` locate a
+relevant source span in a known file. `REFERENCES:`, `TESTS:`, and `SEARCH:`
+perform the bounded literal discovery described above. See the
+[Protocol](protocol.md#step-2-extract) for the selector matching rules.
 
 Use the same goal file from `api prompt`:
 
@@ -299,10 +312,10 @@ Send the complete stdout payload back to the same model conversation. Prompt 2
 contains only the source context selected for extraction, subject to Badger's
 safety and size limits.
 
-If some selectors fail (file not found, ambiguous path, safety exclusion), the
-corresponding diagnostics go to stderr while any usable extracted content is
-still written to stdout. The exit status is nonzero only when no usable content
-can be produced.
+If some selectors fail (file not found, ambiguous path, no discovery match, or
+safety exclusion), the corresponding diagnostics go to stderr while any usable
+extracted content is still written to stdout. The exit status is nonzero only
+when no usable content can be produced.
 
 ## Error example
 
