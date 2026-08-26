@@ -24,6 +24,10 @@ require_snapshot = true
 
 [write]
 patch_only = true
+post_apply_review = true
+
+[verify]
+command = ["go", "test", "./..."]
 `
 	if err := os.WriteFile(filepath.Join(root, ConfigFileName), []byte(content), 0o644); err != nil {
 		t.Fatal(err)
@@ -32,8 +36,11 @@ patch_only = true
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !policy.Security.BlockSecrets || !policy.Session.RequireSnapshot || !policy.Write.PatchOnly {
+	if !policy.Security.BlockSecrets || !policy.Session.RequireSnapshot || !policy.Write.PatchOnly || !policy.Write.PostApplyReview {
 		t.Fatalf("policy flags not loaded: %+v", policy)
+	}
+	if len(policy.Verify.Command) != 3 || policy.Verify.Command[0] != "go" || policy.Verify.Command[2] != "./..." {
+		t.Fatalf("verification command not loaded: %+v", policy.Verify.Command)
 	}
 	if !policy.Denies("recordings/run.dat") || !policy.Denies("customer/a/b.txt") {
 		t.Fatalf("deny globs not applied: %+v", policy.Security.Deny)
@@ -54,7 +61,7 @@ func TestLoadMissingPolicyPreservesDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if policy.Security.BlockSecrets || policy.Session.RequireSnapshot || policy.Write.PatchOnly {
+	if policy.Security.BlockSecrets || policy.Session.RequireSnapshot || policy.Write.PatchOnly || policy.Write.PostApplyReview || len(policy.Verify.Command) != 0 {
 		t.Fatalf("missing policy must preserve legacy behavior: %+v", policy)
 	}
 }
@@ -67,5 +74,20 @@ func TestRejectUnsafePattern(t *testing.T) {
 	}
 	if _, err := Load(root); err == nil {
 		t.Fatal("expected unsafe pattern error")
+	}
+}
+
+func TestVerificationCommandPreservesLiteralArguments(t *testing.T) {
+	root := t.TempDir()
+	content := "[verify]\ncommand = [\"go\", \"test\", \"./pkg with spaces\"]\n"
+	if err := os.WriteFile(filepath.Join(root, ConfigFileName), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	policy, err := Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := policy.Verify.Command[2]; got != "./pkg with spaces" {
+		t.Fatalf("verification argument was normalized as a path: %q", got)
 	}
 }
