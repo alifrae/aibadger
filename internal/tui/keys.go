@@ -22,6 +22,16 @@ const (
 
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	var preKeyCmd tea.Cmd
+	if m.state == stateTextResponse && m.postApplyActive() {
+		switch msg.String() {
+		case "r", "R":
+			return m.preparePostApplyIndependentReview()
+		case "v", "V":
+			return m.startPostApplyVerification()
+		case "esc":
+			return m.returnHome(neutralMessage("Post-apply review closed. Ready for the next goal."))
+		}
+	}
 	if m.state == stateHome && m.goalFocus == goalFocusEditor && goalEditorKeyFinalizesPasteCapture(msg) {
 		preKeyCmd = m.finishGoalPasteCapture()
 		if goalEditorKeyBypassesAppRouting(msg) {
@@ -168,8 +178,11 @@ func (m Model) handleKeyEnter() (tea.Model, tea.Cmd, bool) {
 		return next, cmd, true
 
 	case stateTextResponse:
-		// The AI returned text only (no file writes); acknowledge and reset.
-		next, cmd := m.returnHome(neutralMessage("Ready for the next goal."))
+		status := neutralMessage("Ready for the next goal.")
+		if m.postApplyActive() {
+			status = neutralMessage("Post-apply review complete. Ready for the next goal.")
+		}
+		next, cmd := m.returnHome(status)
 		return next, cmd, true
 
 	case stateManualCopy:
@@ -615,6 +628,9 @@ func (m Model) statusLine() string {
 	mode := statusLineKeyboardHints
 	switch mode {
 	case statusLineKeyboardHints:
+		if m.state == stateTextResponse && m.postApplyActive() {
+			return strings.Join([]string{"Focus: " + workflow.FocusDisplayName(m.cfg.Focus), "R independent review", "V verify", "Enter finish", "Ctrl+C quit"}, " · ")
+		}
 		hints := keyboardHintsForState(m.state, m.badgeStarred)
 		return strings.Join(append([]string{"Focus: " + workflow.FocusDisplayName(m.cfg.Focus)}, hints...), " · ")
 	default:
