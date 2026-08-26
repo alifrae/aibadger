@@ -1,6 +1,6 @@
 package extractor
 
-// This file owns the input boundary for FILE/PREFIX/NEAR command text.
+// This file owns the input boundary for selector command text.
 
 import (
 	"bufio"
@@ -12,8 +12,8 @@ import (
 
 // Command represents a single extraction command.
 type Command struct {
-	Type    string // FILE, PREFIX, NEAR
-	Path    string
+	Type    string // FILE, PREFIX, NEAR, SYMBOL, REFERENCES, TESTS, SEARCH
+	Path    string // file path for file/span selectors; literal for discovery selectors
 	Pattern string
 }
 
@@ -24,26 +24,20 @@ type CommandParseResult struct {
 	Failures []string
 }
 
-// ParseCommands parses the AI's response into a list of Commands.
 func (e *Extractor) ParseCommands(input string) []Command {
 	return e.parseCommands(input, false).Commands
 }
 
-// ParseCommandsDetailed parses selectors and reports malformed input lines
-// without discarding selectors that remain usable.
 func (e *Extractor) ParseCommandsDetailed(input string) CommandParseResult {
 	return e.parseCommands(input, true)
 }
 
 // ParseStrictCommandsDetailed accepts only one complete selector per non-empty
 // line. Review continuation uses this boundary so ordinary findings are never
-// mistaken for extraction requests merely because they mention FILE: in prose.
+// mistaken for extraction requests merely because they mention selector text.
 func (e *Extractor) ParseStrictCommandsDetailed(input string) CommandParseResult {
 	var result CommandParseResult
 	scanner := bufio.NewScanner(strings.NewReader(input))
-	// The caller already owns input as a string, so allow one token to span the
-	// complete response. Otherwise Scanner's 64 KiB default can stop after an
-	// earlier valid selector and silently hide oversized mixed prose.
 	scanner.Buffer(make([]byte, 64*1024), len(input)+1)
 	lineNumber := 0
 	for scanner.Scan() {
@@ -54,11 +48,11 @@ func (e *Extractor) ParseStrictCommandsDetailed(input string) CommandParseResult
 		}
 		cmd, ok := parseCommandLine(line)
 		if !ok {
-			result.Failures = append(result.Failures, fmt.Sprintf("line %d: not a complete FILE, PREFIX, or NEAR selector", lineNumber))
+			result.Failures = append(result.Failures, fmt.Sprintf("line %d: not a complete supported selector", lineNumber))
 			continue
 		}
-		if (cmd.Type == "PREFIX" || cmd.Type == "NEAR") && cmd.Pattern == "" {
-			result.Failures = append(result.Failures, fmt.Sprintf("line %d: %s requires path#pattern", lineNumber, cmd.Type))
+		if err := validateCommand(cmd); err != nil {
+			result.Failures = append(result.Failures, fmt.Sprintf("line %d: %v", lineNumber, err))
 			continue
 		}
 		result.Commands = append(result.Commands, cmd)
@@ -84,8 +78,10 @@ func (e *Extractor) parseCommands(input string, reportMalformed bool) CommandPar
 			continue
 		}
 		if cmd, ok := parseCommandLine(line); ok {
-			if reportMalformed && (cmd.Type == "PREFIX" || cmd.Type == "NEAR") && cmd.Pattern == "" {
-				result.Failures = append(result.Failures, fmt.Sprintf("line %d: %s requires path#pattern", lineNumber, cmd.Type))
+			if err := validateCommand(cmd); err != nil {
+				if reportMalformed {
+					result.Failures = append(result.Failures, fmt.Sprintf("line %d: %v", lineNumber, err))
+				}
 				continue
 			}
 			result.Commands = append(result.Commands, cmd)
@@ -103,27 +99,44 @@ func (e *Extractor) parseCommands(input string, reportMalformed bool) CommandPar
 	return result
 }
 
+func validateCommand(cmd Command) error {
+	switch cmd.Type {
+	case "PREFIX", "NEAR", "SYMBOL":
+		if cmd.Pattern == "" {
+			return fmt.Errorf("%s requires path#pattern", cmd.Type)
+		}
+	case "REFERENCES", "TESTS", "SEARCH":
+		if strings.TrimSpace(cmd.Path) == "" {
+			return fmt.Errorf("%s requires a non-empty literal", cmd.Type)
+		}
+	}
+	return nil
+}
+
 func parseCommandLine(line string) (Command, bool) {
 	line = strings.TrimSpace(line)
 	if line == "" {
 		return Command{}, false
 	}
-
 	parts := strings.SplitN(line, ":", 2)
 	if len(parts) < 2 {
 		return Command{}, false
 	}
-
-	cmdType := strings.ToUpper(parts[0])
+	cmdType := strings.ToUpper(strings.TrimSpace(parts[0]))
 	if !isSupportedCommandType(cmdType) {
 		return Command{}, false
 	}
-
-	pathAndPattern := strings.SplitN(parts[1], "#", 2)
-	cmd := Command{
-		Type: cmdType,
-		Path: strings.TrimSpace(pathAndPattern[0]),
+	value := strings.TrimSpace(parts[1])
+	if value == "" {
+		return Command{}, false
 	}
+	cmd := Command{Type: cmdType}
+	if cmdType == "REFERENCES" || cmdType == "TESTS" || cmdType == "SEARCH" {
+		cmd.Path = strings.TrimSpace(strings.Trim(value, "\""))
+		return cmd, cmd.Path != ""
+	}
+	pathAndPattern := strings.SplitN(value, "#", 2)
+	cmd.Path = strings.TrimSpace(pathAndPattern[0])
 	if len(pathAndPattern) > 1 {
 		cmd.Pattern = strings.TrimSpace(pathAndPattern[1])
 	}
@@ -134,7 +147,12 @@ func parseCommandLine(line string) (Command, bool) {
 }
 
 func isSupportedCommandType(cmdType string) bool {
-	return cmdType == "FILE" || cmdType == "PREFIX" || cmdType == "NEAR"
+	switch cmdType {
+	case "FILE", "PREFIX", "NEAR", "SYMBOL", "REFERENCES", "TESTS", "SEARCH":
+		return true
+	default:
+		return false
+	}
 }
 
 func shouldRecoverEmbeddedFiles(line string) bool {
@@ -143,9 +161,8 @@ func shouldRecoverEmbeddedFiles(line string) bool {
 	if len(parts) < 2 {
 		return false
 	}
-
 	cmdType := strings.ToUpper(parts[0])
-	if cmdType == "PREFIX" || cmdType == "NEAR" {
+	if cmdType == "PREFIX" || cmdType == "NEAR" || cmdType == "SYMBOL" || cmdType == "REFERENCES" || cmdType == "TESTS" || cmdType == "SEARCH" {
 		return false
 	}
 	return len(fileTokenIndexes(line)) > 1
@@ -160,16 +177,11 @@ func parseEmbeddedFileCommands(line string) []Command {
 		if i+1 < len(indexes) {
 			end = indexes[i+1]
 		}
-
 		path := strings.TrimSpace(line[start:end])
 		path = strings.TrimRight(path, " \t\r\n.,;:)]}")
-		if path == "" {
-			continue
+		if path != "" {
+			commands = append(commands, Command{Type: "FILE", Path: path})
 		}
-		commands = append(commands, Command{
-			Type: "FILE",
-			Path: path,
-		})
 	}
 	return commands
 }
