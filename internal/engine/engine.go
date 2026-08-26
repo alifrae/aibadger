@@ -252,7 +252,10 @@ func (e *Engine) resolveTaggedFiles(goal string) ([]protocol.TaggedFile, []strin
 	paths := make([]protocol.TaggedFile, 0, len(refs))
 	seen := make(map[string]struct{}, len(refs))
 	for _, ref := range refs {
-		resolved, err := taggedfile.Resolve(e.Root, ref.Path, externalRoots)
+		resolved, handled, err := e.resolveNamedTaggedFile(ref.Path)
+		if !handled {
+			resolved, err = taggedfile.Resolve(e.Root, ref.Path, externalRoots)
+		}
 		if err != nil {
 			warnings = append(warnings, err.Error())
 			continue
@@ -268,6 +271,40 @@ func (e *Engine) resolveTaggedFiles(goal string) ([]protocol.TaggedFile, []strin
 	}
 
 	return paths, warnings
+}
+
+func (e *Engine) resolveNamedTaggedFile(path string) (taggedfile.ResolvedPath, bool, error) {
+	if e == nil || e.Topology == nil {
+		return taggedfile.ResolvedPath{}, false, nil
+	}
+	normalized := filepath.ToSlash(filepath.Clean(strings.TrimSpace(path)))
+	for _, ctx := range e.Topology.ExternalContext {
+		if ctx.Label == "" {
+			continue
+		}
+		if normalized != ctx.Label && !strings.HasPrefix(normalized, ctx.Label+"/") {
+			continue
+		}
+		requestPath := "@" + normalized
+		if normalized == ctx.Label {
+			return taggedfile.ResolvedPath{}, true, fmt.Errorf("tagged file path is a directory: %s", requestPath)
+		}
+		resolution := externalcontext.ResolveFileFiltered(e.Root, []model.ExternalContext{ctx}, requestPath)
+		if len(resolution.Matches) == 0 {
+			return taggedfile.ResolvedPath{}, true, fmt.Errorf("tagged file path does not exist: %s", requestPath)
+		}
+		if len(resolution.Matches) > 1 {
+			return taggedfile.ResolvedPath{}, true, fmt.Errorf("ambiguous tagged file reference %q", requestPath)
+		}
+		match := resolution.Matches[0]
+		return taggedfile.ResolvedPath{
+			Path:       requestPath,
+			AbsPath:    match.AbsPath,
+			Source:     taggedfile.SourceExternal,
+			SourceRoot: ctx.AbsPath,
+		}, true, nil
+	}
+	return taggedfile.ResolvedPath{}, false, nil
 }
 
 func (e *Engine) taggedDisplayPath(resolved taggedfile.ResolvedPath) string {
