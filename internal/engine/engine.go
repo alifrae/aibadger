@@ -131,7 +131,7 @@ func (e *Engine) GenerateMapDetailed(goal string) (string, []string) {
 	return prompt, warnings
 }
 
-// ParseCommands parses FILE/PREFIX/NEAR extraction commands.
+// ParseCommands parses extraction selector commands.
 func (e *Engine) ParseCommands(input string) []extractor.Command {
 	clean, err := e.parseSnapshotInput(input)
 	if err != nil {
@@ -277,8 +277,12 @@ func (e *Engine) ExternalRoots() []taggedfile.ExternalRoot {
 	roots := make([]taggedfile.ExternalRoot, 0, len(e.Topology.ExternalContext))
 	for _, ctx := range e.Topology.ExternalContext {
 		ctx := ctx // capture for closure
+		tagPath := ctx.Path
+		if ctx.Label != "" {
+			tagPath = ctx.Label // tagged-file parser already consumes the leading @
+		}
 		roots = append(roots, taggedfile.ExternalRoot{
-			Path:    ctx.Path,
+			Path:    tagPath,
 			AbsPath: ctx.AbsPath,
 			IsOmitted: func(relPath, absPath string) bool {
 				return externalcontext.IsOmittedPath(ctx.AbsPath, absPath, relPath) || !externalcontext.IsAllowedPath(ctx, relPath, false)
