@@ -79,7 +79,7 @@ func TestRejectUnsafePattern(t *testing.T) {
 
 func TestVerificationCommandPreservesLiteralArguments(t *testing.T) {
 	root := t.TempDir()
-	content := "[verify]\ncommand = [\"go\", \"test\", \"./pkg with spaces\"]\n"
+	content := "[write]\npost_apply_review = true\n\n[verify]\ncommand = [\"go\", \"test\", \"./pkg with spaces\"]\n"
 	if err := os.WriteFile(filepath.Join(root, ConfigFileName), []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -89,5 +89,16 @@ func TestVerificationCommandPreservesLiteralArguments(t *testing.T) {
 	}
 	if got := policy.Verify.Command[2]; got != "./pkg with spaces" {
 		t.Fatalf("verification argument was normalized as a path: %q", got)
+	}
+}
+
+func TestVerificationCommandRequiresPostApplyReview(t *testing.T) {
+	root := t.TempDir()
+	content := "[verify]\ncommand = [\"go\", \"test\", \"./...\"]\n"
+	if err := os.WriteFile(filepath.Join(root, ConfigFileName), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(root); err == nil {
+		t.Fatal("expected verify.command without post-apply review to be rejected")
 	}
 }
