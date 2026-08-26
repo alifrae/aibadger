@@ -95,6 +95,11 @@ func reviewContinuationCmd(session *workflow.Session, commands []extractor.Comma
 
 func writeCmd(session *workflow.Session, updates []writer.FileUpdate) tea.Cmd {
 	return func() tea.Msg {
+		if session == nil || session.Engine == nil || !session.Engine.Policy.Write.PostApplyReview {
+			applied, errs := session.ApplyWrites(updates)
+			return writeDoneMsg{updates: applied, errs: errs}
+		}
+
 		capture, err := postapply.Begin(session.Engine.Root, updates)
 		if err != nil {
 			return writeDoneMsg{errs: []error{fmt.Errorf("capturing pre-apply state: %w", err)}}
