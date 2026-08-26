@@ -35,7 +35,7 @@ func (r *RustDetector) Detect(root string) ([]model.Module, error) {
 		}
 		crateRoot := filepath.Dir(manifest)
 		module := r.analyzeCrate(root, crateRoot, name)
-		if module.FileCount > 0 || fileExists(filepath.Join(crateRoot, "build.rs")) {
+		if module.FileCount > 0 || rustFileExists(filepath.Join(crateRoot, "build.rs")) {
 			modules = append(modules, module)
 		}
 	}
@@ -50,6 +50,7 @@ func cargoPackageName(manifest string) (string, bool) {
 	}
 	defer f.Close()
 	section := ""
+	hasPackage := false
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -58,6 +59,9 @@ func cargoPackageName(manifest string) (string, bool) {
 		}
 		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
 			section = strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(line, "["), "]"))
+			if section == "package" {
+				hasPackage = true
+			}
 			continue
 		}
 		if section != "package" {
@@ -76,7 +80,7 @@ func cargoPackageName(manifest string) (string, bool) {
 			return name, true
 		}
 	}
-	return "", section == "package"
+	return "", hasPackage
 }
 
 func (r *RustDetector) analyzeCrate(projectRoot, crateRoot, name string) model.Module {
@@ -173,11 +177,11 @@ func (r *RustDetector) scanRustRoot(projectRoot, fullRoot, role string) (model.S
 }
 
 func rustPackageName(rel string) string {
-	rel = normalizeRelativeDir(rel)
-	if rel == "" {
+	rel = filepath.ToSlash(filepath.Clean(rel))
+	if rel == "" || rel == "." {
 		return "root"
 	}
-	return filepath.ToSlash(rel)
+	return rel
 }
 
 func addRustTopFile(files []model.FileSummary, file model.FileSummary, limit int) []model.FileSummary {
@@ -209,7 +213,7 @@ func rustFileRank(name string) int {
 	}
 }
 
-func fileExists(path string) bool {
+func rustFileExists(path string) bool {
 	info, err := os.Stat(path)
 	return err == nil && info.Mode().IsRegular()
 }
