@@ -12,9 +12,11 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-func postApplyTestModel() Model {
-	m := NewModel("/tmp/project", DefaultConfig())
+func postApplyTestModel(t *testing.T) Model {
+	t.Helper()
+	m := NewModel(t.TempDir(), DefaultConfig())
 	m.state = stateTextResponse
+	m.goal = "Fix the frame decoder without changing its public API."
 	m.postApply = postapply.Result{
 		Files:     []string{"src/main.go"},
 		Diff:      "--- a/src/main.go\n+++ b/src/main.go\n@@ -1 +1 @@\n-old\n+new\n",
@@ -25,7 +27,7 @@ func postApplyTestModel() Model {
 }
 
 func TestPostApplyReviewShowsGroundTruthAndActions(t *testing.T) {
-	m := postApplyTestModel()
+	m := postApplyTestModel(t)
 	view := m.viewTextResponse()
 	for _, want := range []string{"Post-apply review", "src/main.go", "+1 / -1", "Exact landed diff", "independent AI review", "run verification"} {
 		if !strings.Contains(view, want) {
@@ -35,7 +37,7 @@ func TestPostApplyReviewShowsGroundTruthAndActions(t *testing.T) {
 }
 
 func TestPostApplyReviewShortcutBuildsExactDeltaHandoff(t *testing.T) {
-	m := postApplyTestModel()
+	m := postApplyTestModel(t)
 	next, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
 	got := next.(Model)
 	if got.state != stateHome || protocol.NormalizeFocus(got.cfg.Focus) != protocol.FocusReview {
@@ -44,13 +46,16 @@ func TestPostApplyReviewShortcutBuildsExactDeltaHandoff(t *testing.T) {
 	if len(got.goalAttachments) != 1 || !strings.Contains(got.goalAttachments[0].Text, "src/main.go") {
 		t.Fatalf("exact landed delta was not attached: %+v", got.goalAttachments)
 	}
+	if !strings.Contains(got.goalInput.Value(), "Fix the frame decoder without changing its public API.") {
+		t.Fatalf("original task missing from independent review: %q", got.goalInput.Value())
+	}
 	if got.postApplyActive() {
 		t.Fatal("post-apply state should be cleared after it is copied into the review attachment")
 	}
 }
 
 func TestPostApplyVerifyWithoutCommandDoesNotExecute(t *testing.T) {
-	m := postApplyTestModel()
+	m := postApplyTestModel(t)
 	m.eng = &engine.Engine{Policy: projectpolicy.Policy{}}
 	next, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'v'}})
 	got := next.(Model)
@@ -63,7 +68,7 @@ func TestPostApplyVerifyWithoutCommandDoesNotExecute(t *testing.T) {
 }
 
 func TestPostApplyEnterFinishesAndClearsDelta(t *testing.T) {
-	m := postApplyTestModel()
+	m := postApplyTestModel(t)
 	next, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
 	got := next.(Model)
 	if got.state != stateHome || got.postApplyActive() {
@@ -72,7 +77,7 @@ func TestPostApplyEnterFinishesAndClearsDelta(t *testing.T) {
 }
 
 func TestWriteDoneWithoutPostApplyReviewPreservesLegacyCompletion(t *testing.T) {
-	m := NewModel("/tmp/project", DefaultConfig())
+	m := NewModel(t.TempDir(), DefaultConfig())
 	m.state = stateWriting
 	next, _ := m.Update(writeDoneMsg{updates: []writer.FileUpdate{{Path: "main.go", Kind: writer.UpdateKindWrite}}})
 	got := next.(Model)
@@ -85,7 +90,7 @@ func TestWriteDoneWithoutPostApplyReviewPreservesLegacyCompletion(t *testing.T) 
 }
 
 func TestWriteDoneWithPostApplyDeltaRequiresFinalReview(t *testing.T) {
-	m := NewModel("/tmp/project", DefaultConfig())
+	m := NewModel(t.TempDir(), DefaultConfig())
 	m.state = stateWriting
 	delta := postapply.Result{Files: []string{"main.go"}, Diff: "--- a/main.go\n+++ b/main.go\n", Additions: 1}
 	next, _ := m.Update(writeDoneMsg{updates: []writer.FileUpdate{{Path: "main.go", Kind: writer.UpdateKindWrite}}, postApply: delta})
