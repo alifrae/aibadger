@@ -69,12 +69,17 @@ func (m Model) preparePostApplyIndependentReview() (tea.Model, tea.Cmd) {
 		m.postApply.Additions,
 		m.postApply.Deletions,
 	)
+	originalTask := strings.TrimSpace(m.goal)
+	reviewGoal := "Review only the exact Badger-applied delta attached below. Check whether the landed changes match the original task and identify concrete correctness, regression, or safety issues. Do not review unrelated pre-existing worktree changes."
+	if originalTask != "" {
+		reviewGoal += "\n\nOriginal task as submitted to Badger:\n" + originalTask
+	}
 	m.cfg.Focus = protocol.FocusReview
 	m.state = stateHome
 	m.goal = ""
 	m.err = nil
 	m.completion.suppressedKey = ""
-	m.setGoalInputValue("Review only the exact Badger-applied delta attached below. Check whether the landed changes match the intended task and identify concrete correctness, regression, or safety issues. Do not review unrelated pre-existing worktree changes.")
+	m.setGoalInputValue(reviewGoal)
 	m.setGoalAttachments([]goalAttachment{attachment})
 	m.postApply = postapply.Result{}
 	m.verification = verification.Result{}
@@ -82,7 +87,7 @@ func (m Model) preparePostApplyIndependentReview() (tea.Model, tea.Cmd) {
 	m.resizeGoalEditor()
 	m.focusGoalEditor()
 	m.paste.Blur()
-	m.status = successMessage("Prepared an independent review from the exact landed delta. Press Enter to build the review prompt.")
+	m.status = successMessage("Prepared an independent review from the exact landed delta and original task. Press Enter to build the review prompt.")
 	return m, textarea.Blink
 }
 
