@@ -148,8 +148,10 @@ func shouldSkipSelectorDir(name string) bool {
 func isLikelyTestPath(path string) bool {
 	lower := strings.ToLower(filepath.ToSlash(path))
 	base := strings.ToLower(filepath.Base(lower))
-	if strings.Contains(lower, "/tests/") || strings.Contains(lower, "/test/") || strings.Contains(lower, "/__tests__/") {
-		return true
+	for _, prefix := range []string{"tests/", "test/", "__tests__/"} {
+		if strings.HasPrefix(lower, prefix) || strings.Contains(lower, "/"+prefix) {
+			return true
+		}
 	}
 	if strings.HasPrefix(base, "test_") || strings.Contains(base, "_test.") || strings.Contains(base, ".test.") || strings.Contains(base, ".spec.") {
 		return true
