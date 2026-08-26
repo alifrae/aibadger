@@ -37,7 +37,9 @@ func (e *Engine) decorateMap(prompt string) (string, []string) {
 	if suffix := e.policyPromptSuffix(); suffix != "" {
 		prompt += suffix
 	}
-	prompt += snapshot.PromptSuffix(e.Snapshot)
+	if e.Policy.Session.RequireSnapshot {
+		prompt += snapshot.PromptSuffix(e.Snapshot)
+	}
 	return prompt, warnings
 }
 
@@ -52,10 +54,13 @@ func (e *Engine) policyPromptSuffix() string {
 	if len(e.Policy.Docs.CanonicalRoots) > 0 {
 		lines = append(lines, "Canonical docs: "+strings.Join(e.Policy.Docs.CanonicalRoots, ", "))
 	}
+	if e.Policy.Write.PatchOnly {
+		lines = append(lines, "Write mode: unified diff only. For code changes use --- Patch --- / --- End Patch --- around a standard unified diff with repository-relative a/ and b/ paths.")
+	}
 	if len(lines) == 0 {
 		return ""
 	}
-	return "\n[PROJECT POLICY]\n" + strings.Join(lines, "\n") + "\nTreat these as routing hints; request only the specific files needed for the task.\n"
+	return "\n[PROJECT POLICY]\n" + strings.Join(lines, "\n") + "\nTreat context and documentation entries as routing hints; request only the specific files needed for the task.\n"
 }
 
 func (e *Engine) parseSnapshotInput(input string) (string, error) {
@@ -66,7 +71,7 @@ func (e *Engine) parseSnapshotInput(input string) (string, error) {
 	if e == nil {
 		return selectors, nil
 	}
-	if e.snapshotErr != nil {
+	if e.snapshotErr != nil && e.Policy.Session.RequireSnapshot {
 		return "", e.snapshotErr
 	}
 	if err := snapshot.ValidateExpected(id, e.Snapshot, e.Policy.Session.RequireSnapshot); err != nil {
@@ -103,10 +108,10 @@ func (e *Engine) filterEgress(extractions []protocol.ExtractionResult) ([]protoc
 	return kept, notices, nil
 }
 
-// ValidateWriteBase rejects writes when the repository changed after Badger
-// built the context supplied to the model.
+// ValidateWriteBase rejects writes when snapshot pinning is enabled and the
+// repository changed after Badger built the context supplied to the model.
 func (e *Engine) ValidateWriteBase() error {
-	if e == nil || e.Snapshot.ID == "" {
+	if e == nil || !e.Policy.Session.RequireSnapshot || e.Snapshot.ID == "" {
 		return nil
 	}
 	current, err := snapshot.Capture(e.Root)
