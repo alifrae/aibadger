@@ -8,6 +8,7 @@ import (
 	"github.com/PVRLabs/aibadger/internal/postapply"
 	"github.com/PVRLabs/aibadger/internal/projectpolicy"
 	"github.com/PVRLabs/aibadger/internal/protocol"
+	"github.com/PVRLabs/aibadger/internal/writer"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -67,5 +68,29 @@ func TestPostApplyEnterFinishesAndClearsDelta(t *testing.T) {
 	got := next.(Model)
 	if got.state != stateHome || got.postApplyActive() {
 		t.Fatalf("post-apply finish did not reset state: state=%v postApply=%+v", got.state, got.postApply)
+	}
+}
+
+func TestWriteDoneWithoutPostApplyReviewPreservesLegacyCompletion(t *testing.T) {
+	m := NewModel("/tmp/project", DefaultConfig())
+	m.state = stateWriting
+	next, _ := m.Update(writeDoneMsg{updates: []writer.FileUpdate{{Path: "main.go", Kind: writer.UpdateKindWrite}}})
+	got := next.(Model)
+	if got.state != stateHome {
+		t.Fatalf("legacy write completion state=%v, want home", got.state)
+	}
+	if !strings.Contains(got.status.text, "Wrote 1 file(s). Ready for the next goal.") {
+		t.Fatalf("unexpected legacy completion status: %q", got.status.text)
+	}
+}
+
+func TestWriteDoneWithPostApplyDeltaRequiresFinalReview(t *testing.T) {
+	m := NewModel("/tmp/project", DefaultConfig())
+	m.state = stateWriting
+	delta := postapply.Result{Files: []string{"main.go"}, Diff: "--- a/main.go\n+++ b/main.go\n", Additions: 1}
+	next, _ := m.Update(writeDoneMsg{updates: []writer.FileUpdate{{Path: "main.go", Kind: writer.UpdateKindWrite}}, postApply: delta})
+	got := next.(Model)
+	if got.state != stateTextResponse || !got.postApplyActive() {
+		t.Fatalf("post-apply write should require review: state=%v delta=%+v", got.state, got.postApply)
 	}
 }
