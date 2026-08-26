@@ -15,7 +15,7 @@ always_include = ["AGENTS.md", "docs/architecture/"]
 canonical_roots = ["docs/architecture/", "docs/api/"]
 
 [security]
-deny = ["recordings/**", "customer/**"]
+deny = ["recordings/**", "customer/**", "**/*.dat"]
 warn = ["calibration/**"]
 block_secrets = true
 
@@ -37,6 +37,9 @@ patch_only = true
 	}
 	if !policy.Denies("recordings/run.dat") || !policy.Denies("customer/a/b.txt") {
 		t.Fatalf("deny globs not applied: %+v", policy.Security.Deny)
+	}
+	if !policy.Denies("capture.dat") || !policy.Denies("nested/capture.dat") {
+		t.Fatalf("recursive glob must match root and nested files: %+v", policy.Security.Deny)
 	}
 	if policy.Denies("src/main.go") {
 		t.Fatal("unexpected deny match")
