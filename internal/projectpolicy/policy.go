@@ -19,27 +19,19 @@ type SecurityPolicy struct {
 	BlockSecrets bool
 }
 
-type ContextPolicy struct {
-	AlwaysInclude []string
-}
-
-type DocsPolicy struct {
-	CanonicalRoots []string
-}
-
-type SessionPolicy struct {
-	RequireSnapshot bool
-}
-
+type ContextPolicy struct{ AlwaysInclude []string }
+type DocsPolicy struct{ CanonicalRoots []string }
+type SessionPolicy struct{ RequireSnapshot bool }
 type WritePolicy struct {
 	PatchOnly       bool
 	PostApplyReview bool
 }
+type VerifyPolicy struct{ Command []string }
 
-type VerifyPolicy struct {
-	// Command is an argv vector executed directly, without a shell, only after
-	// the user explicitly requests verification from the post-apply screen.
-	Command []string
+type ExternalSourcePolicy struct {
+	Label   string
+	Root    string
+	Include []string
 }
 
 type Policy struct {
@@ -49,6 +41,7 @@ type Policy struct {
 	Session  SessionPolicy
 	Write    WritePolicy
 	Verify   VerifyPolicy
+	External []ExternalSourcePolicy
 }
 
 func Default() Policy { return Policy{} }
@@ -82,9 +75,7 @@ func Load(root string) (Policy, error) {
 		if len(parts) != 2 {
 			return Policy{}, fmt.Errorf("%s:%d: expected key = value", ConfigFileName, lineNumber)
 		}
-		key := strings.TrimSpace(parts[0])
-		value := strings.TrimSpace(parts[1])
-		if err := assign(&policy, section, key, value); err != nil {
+		if err := assign(&policy, section, strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1])); err != nil {
 			return Policy{}, fmt.Errorf("%s:%d: %w", ConfigFileName, lineNumber, err)
 		}
 	}
@@ -96,6 +87,20 @@ func Load(root string) (Policy, error) {
 	}
 	if err := validatePatterns(policy.Security.Warn); err != nil {
 		return Policy{}, fmt.Errorf("security.warn: %w", err)
+	}
+	for i := range policy.External {
+		source := &policy.External[i]
+		if strings.TrimSpace(source.Root) == "" {
+			return Policy{}, fmt.Errorf("external.%s.root is required", source.Label)
+		}
+		if filepath.IsAbs(source.Root) {
+			// Absolute roots are allowed for explicit local external context.
+		} else if strings.Contains(source.Root, "://") || strings.ContainsAny(source.Root, "*?[]") {
+			return Policy{}, fmt.Errorf("external.%s.root must be a local directory path", source.Label)
+		}
+		if err := validatePatterns(source.Include); err != nil {
+			return Policy{}, fmt.Errorf("external.%s.include: %w", source.Label, err)
+		}
 	}
 	if len(policy.Verify.Command) > 0 {
 		if strings.TrimSpace(policy.Verify.Command[0]) == "" {
@@ -109,6 +114,22 @@ func Load(root string) (Policy, error) {
 }
 
 func assign(policy *Policy, section, key, raw string) error {
+	if strings.HasPrefix(section, "external.") {
+		label := strings.TrimSpace(strings.TrimPrefix(section, "external."))
+		if label == "" || strings.ContainsAny(label, "/\\@ ") {
+			return fmt.Errorf("external source label %q is invalid", label)
+		}
+		source := externalSource(policy, label)
+		switch key {
+		case "root":
+			return decodeString(raw, &source.Root)
+		case "include":
+			return decodePathArray(raw, &source.Include)
+		default:
+			return fmt.Errorf("unsupported setting %s.%s", section, key)
+		}
+	}
+
 	switch section + "." + key {
 	case "security.deny":
 		return decodePathArray(raw, &policy.Security.Deny)
@@ -131,6 +152,25 @@ func assign(policy *Policy, section, key, raw string) error {
 	default:
 		return fmt.Errorf("unsupported setting %s.%s", section, key)
 	}
+}
+
+func externalSource(policy *Policy, label string) *ExternalSourcePolicy {
+	for i := range policy.External {
+		if policy.External[i].Label == label {
+			return &policy.External[i]
+		}
+	}
+	policy.External = append(policy.External, ExternalSourcePolicy{Label: label})
+	return &policy.External[len(policy.External)-1]
+}
+
+func decodeString(raw string, dst *string) error {
+	var value string
+	if err := json.Unmarshal([]byte(raw), &value); err != nil || strings.TrimSpace(value) == "" {
+		return fmt.Errorf("expected a non-empty double-quoted string")
+	}
+	*dst = strings.TrimSpace(value)
+	return nil
 }
 
 func decodePathArray(raw string, dst *[]string) error {
@@ -208,12 +248,15 @@ func validatePatterns(patterns []string) error {
 
 func (p Policy) Denies(path string) bool { return matchesAny(p.Security.Deny, path) }
 func (p Policy) Warns(path string) bool  { return matchesAny(p.Security.Warn, path) }
+func MatchGlob(pattern, path string) bool {
+	rx, err := compileGlob(pattern)
+	return err == nil && rx.MatchString(normalize(path))
+}
 
 func matchesAny(patterns []string, path string) bool {
 	path = normalize(path)
 	for _, pattern := range patterns {
-		rx, err := compileGlob(pattern)
-		if err == nil && rx.MatchString(path) {
+		if MatchGlob(pattern, path) {
 			return true
 		}
 	}
