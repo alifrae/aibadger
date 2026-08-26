@@ -73,13 +73,17 @@ const codeSchemaBConstraint = "\n[TASK]\n%s\n\n[OUTPUT CONSTRAINT]\n" +
 	"Do NOT respond with FILE:, PREFIX:, or NEAR: lines; those selector operators are only for Prompt 1 responses.\n" +
 	"\n" +
 	"Output format rules:\n" +
-	"1. For updated or new files:\n" +
+	"1. Prefer a standard unified diff for modifications to existing files:\n" +
+	"--- Patch ---\n" +
+	"<unified diff using repository-relative a/ and b/ paths>\n" +
+	"--- End Patch ---\n\n" +
+	"2. Whole-file output remains supported for new files or when a patch is genuinely unsuitable:\n" +
 	"--- File: <path/from/project_root> ---\n" +
 	"<full updated file contents>\n" +
 	"--- End File ---\n\n" +
-	"2. For explicit file deletion:\n" +
+	"3. For explicit file deletion when not using a patch:\n" +
 	"--- Delete File: <path/from/project_root> ---\n\n" +
-	"3. For non-code responses: Just write the text normally.\n"
+	"4. For non-code responses: Just write the text normally.\n"
 
 const reviewSchemaBConstraint = "\n[TASK]\n%s\n\n[OUTPUT CONSTRAINT]\n" +
 	"This is the final-answer step for a code review.\n" +
