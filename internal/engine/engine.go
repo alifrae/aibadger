@@ -61,20 +61,22 @@ func New(root string, maxFilesPerDir int) (*Engine, error) {
 	}, nil
 }
 
-// FromTopology creates an engine around an existing topology. This is useful
-// when the caller already owns scan timing or summary output.
+// FromTopology creates an engine around an existing topology. This constructor
+// does not own the Prompt 1 that established a session, so it cannot safely
+// require a snapshot token. Snapshot pinning is therefore disabled here rather
+// than inventing an orphan snapshot that the prior prompt could not have sent.
 func FromTopology(root string, topology *model.ProjectTopology) *Engine {
 	policy, policyErr := projectpolicy.Load(root)
-	state, snapshotErr := snapshot.Capture(root)
+	if policyErr == nil {
+		policy.Session.RequireSnapshot = false
+	}
 	return &Engine{
-		Root:        root,
-		Topology:    topology,
-		Policy:      policy,
-		Snapshot:    state,
-		policyErr:   policyErr,
-		snapshotErr: snapshotErr,
-		formatter:   protocol.NewFormatter(),
-		extractor:   extractor.NewExtractor(root, topology),
+		Root:       root,
+		Topology:   topology,
+		Policy:     policy,
+		policyErr:  policyErr,
+		formatter:  protocol.NewFormatter(),
+		extractor:  extractor.NewExtractor(root, topology),
 	}
 }
 
