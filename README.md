@@ -86,7 +86,7 @@ cd /path/to/your-project
 /path/to/aibadger/bin/badger code
 ```
 
-See [docs/install.md](docs/install.md) for Windows, source builds, verification, and avoiding confusion between upstream and fork binaries.
+See [docs/install.md](docs/install.md) for Windows, source builds, verification, and avoiding confusion between upstream and fork binaries. See [Using Badger From Source](docs/source-usage.md) for the runtime model and examples against another checkout.
 
 Also available with an official [VS Code companion](https://marketplace.visualstudio.com/items?itemName=pvrlabs.ai-badger). The extension follows the upstream product; do not assume it exposes unreleased fork-only hardening features.
 
@@ -112,7 +112,7 @@ command = ["go", "test", "./..."]
 
 No `.badger.toml` means existing Badger behavior is preserved.
 
-See [Project Policy](docs/project-policy.md) for every setting and dependency.
+See [Project Policy](docs/project-policy.md) for every setting and dependency. A copy-ready PCS-style policy is in [`docs/examples/pcs.badger.toml`](docs/examples/pcs.badger.toml).
 
 ## Agent Skills
 
@@ -147,6 +147,7 @@ The [PCS End-to-End Tutorial](docs/pcs-tutorial.md) walks through a concrete eng
 ## Learn More
 
 - [Usage Examples & Walkthrough](docs/usage.md)
+- [Using Badger From Source](docs/source-usage.md)
 - [PCS End-to-End Tutorial](docs/pcs-tutorial.md)
 - [Project Policy & Configurability](docs/project-policy.md)
 - [Installation & Source Builds](docs/install.md)
