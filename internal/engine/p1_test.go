@@ -65,15 +65,16 @@ func TestNamedExternalTaggedFileUsesCanonicalDisplayPath(t *testing.T) {
 }
 
 func TestTaggedDisplayPathFallsBackForLegacyExternalContext(t *testing.T) {
+	legacy := t.TempDir()
 	eng := &Engine{Topology: &model.ProjectTopology{ExternalContext: []model.ExternalContext{{
 		Path:    "../legacy",
-		AbsPath: "/tmp/legacy",
+		AbsPath: legacy,
 	}}}}
 	resolved := taggedfile.ResolvedPath{
 		Path:       "../legacy/spec.md",
-		AbsPath:    "/tmp/legacy/spec.md",
+		AbsPath:    filepath.Join(legacy, "spec.md"),
 		Source:     taggedfile.SourceExternal,
-		SourceRoot: "/tmp/legacy",
+		SourceRoot: legacy,
 	}
 	if got := eng.taggedDisplayPath(resolved); got != resolved.Path {
 		t.Fatalf("legacy external display changed: %q", got)
