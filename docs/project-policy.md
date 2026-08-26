@@ -14,12 +14,7 @@ always_include = ["AGENTS.md", "docs/architecture/"]
 canonical_roots = ["docs/architecture/", "docs/development/", "docs/api/"]
 
 [security]
-deny = [
-  "recordings/**",
-  "customer_data/**",
-  "**/*.pcap",
-  "**/*.dat"
-]
+deny = ["recordings/**", "customer_data/**", "**/*.pcap", "**/*.dat"]
 warn = ["calibration/**"]
 block_secrets = true
 
@@ -30,7 +25,7 @@ require_snapshot = true
 patch_only = true
 ```
 
-Arrays use double-quoted strings. Unknown settings are rejected instead of silently ignored.
+The current policy parser intentionally supports only this small TOML subset: section headers, booleans, and single-line arrays of double-quoted strings. Unknown settings are rejected instead of silently ignored.
 
 ## Context and documentation hints
 
