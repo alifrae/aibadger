@@ -71,10 +71,7 @@ func NewExtractor(root string, t *model.ProjectTopology) *Extractor {
 
 // Extract performs the extraction for all commands in parallel.
 func (e *Extractor) Extract(commands []Command) ([]protocol.ExtractionResult, error) {
-	expanded, err := e.expandCommands(commands)
-	if err != nil {
-		return nil, err
-	}
+	expanded, expansionFailures := e.expandCommands(commands)
 	commands = expanded
 
 	var wg sync.WaitGroup
@@ -109,7 +106,7 @@ func (e *Extractor) Extract(commands []Command) ([]protocol.ExtractionResult, er
 
 	extracted := make([]protocol.ExtractionResult, 0, len(commands))
 	emittedFile := make(map[string]bool, len(commands))
-	failures := make([]string, 0)
+	failures := append([]string(nil), expansionFailures...)
 	excludedFailures := make([]string, 0)
 	excluded := 0
 	for i, result := range results {
