@@ -495,9 +495,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.status = warningMessage(fmt.Sprintf("Apply finished with %d error(s). Review the exact landed delta before continuing.", len(msg.errs)))
 			return m, nil
 		}
+		writes, deletes := countAppliedKinds(msg.updates)
+		if !m.postApplyActive() {
+			var status tuiMessage
+			switch {
+			case writes > 0 && deletes > 0:
+				status = successMessage(fmt.Sprintf("Applied %d write(s) and %d delete(s). Ready for the next goal.", writes, deletes))
+			case deletes > 0:
+				status = successMessage(fmt.Sprintf("Deleted %d file(s). Ready for the next goal.", deletes))
+			default:
+				status = successMessage(fmt.Sprintf("Wrote %d file(s). Ready for the next goal.", writes))
+			}
+			return m.returnHome(status)
+		}
 		m.err = nil
 		m.state = stateTextResponse
-		writes, deletes := countAppliedKinds(msg.updates)
 		switch {
 		case writes > 0 && deletes > 0:
 			m.status = successMessage(fmt.Sprintf("Applied %d write(s) and %d delete(s). Review the exact landed changes before finishing.", writes, deletes))
