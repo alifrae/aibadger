@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/PVRLabs/aibadger/internal/projectpolicy"
 	"github.com/PVRLabs/aibadger/internal/protocol"
 	"github.com/PVRLabs/aibadger/internal/writer"
 )
@@ -42,11 +43,13 @@ func TestSnapshotPinnedSelectorsDetectDrift(t *testing.T) {
 }
 
 func TestEgressPolicyBlocksSecretAndWarns(t *testing.T) {
-	eng := &Engine{Policy: mustPolicy(t, `[security]
+	root := t.TempDir()
+	policy := mustPolicyAtRoot(t, root, `[security]
 deny = ["recordings/**"]
 warn = ["calibration/**"]
 block_secrets = true
-`)}
+`)
+	eng := &Engine{Root: root, Policy: policy}
 	items := []protocol.ExtractionResult{
 		{Path: "recordings/a.dat", Content: "safe"},
 		{Path: "calibration/a.yaml", Content: "safe"},
@@ -72,17 +75,6 @@ func TestPatchOnlyRejectsWholeFileWrite(t *testing.T) {
 	if err := eng.validateUpdatePolicy(writer.FileUpdate{Path: "main.go", Kind: writer.UpdateKindWrite}); err == nil {
 		t.Fatal("expected whole-file write rejection")
 	}
-}
-
-func mustPolicy(t *testing.T, content string) projectPolicyForTest {
-	t.Helper()
-	root := t.TempDir()
-	return projectPolicyForTest{root: root, content: content}
-}
-
-type projectPolicyForTest struct {
-	root    string
-	content string
 }
 
 func mustPolicyAtRoot(t *testing.T, root, content string) projectpolicy.Policy {
