@@ -281,7 +281,7 @@ func (e *Engine) ExternalRoots() []taggedfile.ExternalRoot {
 			Path:    ctx.Path,
 			AbsPath: ctx.AbsPath,
 			IsOmitted: func(relPath, absPath string) bool {
-				return externalcontext.IsOmittedPath(ctx.AbsPath, absPath, relPath)
+				return externalcontext.IsOmittedPath(ctx.AbsPath, absPath, relPath) || !externalcontext.IsAllowedPath(ctx, relPath, false)
 			},
 		})
 	}
