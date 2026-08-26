@@ -1,77 +1,59 @@
 package protocol
 
-// PromptInstructions contains the LLM constraints for each prompt.
 type PromptInstructions struct {
 	SchemaAConstraint string
 	SchemaBConstraint string
 }
 
-// DefaultInstructions contains the standard OSS code-focus constraints.
 var DefaultInstructions = InstructionsForFocus(FocusCode)
 
-// InstructionsForFocus returns the prompt contract for the supplied focus.
 func InstructionsForFocus(focus Focus) PromptInstructions {
 	switch NormalizeFocus(focus) {
 	case FocusReview:
-		return PromptInstructions{
-			SchemaAConstraint: reviewSchemaAConstraint,
-			SchemaBConstraint: reviewSchemaBConstraint,
-		}
+		return PromptInstructions{SchemaAConstraint: reviewSchemaAConstraint, SchemaBConstraint: reviewSchemaBConstraint}
 	case FocusDesign:
-		return PromptInstructions{
-			SchemaAConstraint: designSchemaAConstraint,
-			SchemaBConstraint: designSchemaBConstraint,
-		}
+		return PromptInstructions{SchemaAConstraint: designSchemaAConstraint, SchemaBConstraint: designSchemaBConstraint}
 	case FocusFollowup:
-		return PromptInstructions{
-			SchemaAConstraint: followupSchemaAConstraint,
-			SchemaBConstraint: followupSchemaBConstraint,
-		}
+		return PromptInstructions{SchemaAConstraint: followupSchemaAConstraint, SchemaBConstraint: followupSchemaBConstraint}
 	default:
-		return PromptInstructions{
-			SchemaAConstraint: codeSchemaAConstraint,
-			SchemaBConstraint: codeSchemaBConstraint,
-		}
+		return PromptInstructions{SchemaAConstraint: codeSchemaAConstraint, SchemaBConstraint: codeSchemaBConstraint}
 	}
 }
 
-const codeSchemaAConstraint = "[TASK]\n%s\n\n[CONSTRAINT]\n" +
-	"Do not solve this yet. You do not know exact method names. Output ONLY a machine-readable list using the exact operators below. Output zero other text, explanations, or markdown formatting.\n" +
-	"Target the smallest context set required for the first logical step. Prefer 3-7 entries; exceed 10 only if the immediate step clearly requires broad implementation context.\n" +
-	"For planning, explanation, triage, or \"what is this project\" queries, request overview files first: entrypoints, public facade/API files, config/defaults, specs/docs if listed, and core orchestrators. Do not request one file from every package just because the query is broad.\n" +
-	"FILE:<path>\n" +
+const selectorOperators = "FILE:<path>\n" +
 	"PREFIX:<path>#<literal prefix from the start of the target line>\n" +
-	"NEAR:<path>#<literal string from a nearby unique line or comment>\n"
+	"NEAR:<path>#<literal string from a nearby unique line or comment>\n" +
+	"SYMBOL:<path>#<symbol name or distinctive declaration text>\n" +
+	"REFERENCES:<literal symbol or identifier>\n" +
+	"TESTS:<literal symbol or identifier>\n" +
+	"SEARCH:<literal text>\n"
+
+const selectorGuidance = "Use FILE/PREFIX/NEAR when the topology already identifies the exact file. Use SYMBOL for a bounded span in a known file. Use REFERENCES, TESTS, or SEARCH only when discovery is genuinely needed; Badger bounds those searches and returns nearby spans rather than repository-wide dumps.\n"
+
+const codeSchemaAConstraint = "[TASK]\n%s\n\n[CONSTRAINT]\n" +
+	"Do not solve this yet. Output ONLY a machine-readable list using the exact operators below. Output zero other text, explanations, or markdown formatting.\n" +
+	"Target the smallest context set required for the first logical step. Prefer 3-7 entries; exceed 10 only if the immediate step clearly requires broad implementation context.\n" +
+	"For planning, explanation, triage, or \"what is this project\" queries, request overview files first: entrypoints, public facade/API files, config/defaults, specs/docs if listed, and core orchestrators. Do not request one file from every package just because the query is broad.\n" + selectorGuidance + selectorOperators
 
 const reviewSchemaAConstraint = "[TASK]\n%s\n\n[CONSTRAINT]\n" +
 	"Review the supplied changes now.\n\n" +
 	"If the supplied diff, changed-file context, project topology, source tree, and external context are sufficient, output the final review findings. Order findings by severity and include the affected file and line when available, the concrete risk, and why it matters. If there are no actionable findings, state that clearly. Do not invent patches or unrelated improvements.\n\n" +
 	"If additional unchanged context is genuinely necessary to confirm or refute a potential finding, output ONLY a machine-readable list using the exact operators below. Output zero other text, explanations, findings, or markdown formatting. Never mix selectors with review findings.\n\n" +
-	"Request the smallest additional context set needed. Prefer directly related implementation files, entrypoints, tests, and core orchestrators. Do not request files already supplied in the review context, and do not request one file from every package merely because the change is large.\n\n" +
-	"FILE:<path>\n" +
-	"PREFIX:<path>#<literal prefix from the start of the target line>\n" +
-	"NEAR:<path>#<literal string from a nearby unique line or comment>\n"
+	"Request the smallest additional context set needed. Prefer directly related implementation files, entrypoints, tests, and core orchestrators. Do not request files already supplied in the review context, and do not request one file from every package merely because the change is large.\n" + selectorGuidance + selectorOperators
 
 const designSchemaAConstraint = "[TASK]\n%s\n\n[CONSTRAINT]\n" +
 	"Do not implement the design yet. Output ONLY a machine-readable list using the exact operators below. Output zero other text, explanations, or markdown formatting.\n" +
 	"Target the smallest context set needed to shape the design. Prefer entrypoints, public facade/API files, core models, config/defaults, and specs/docs when present. Do not request one file from every package just because the query is broad.\n" +
-	"For planning, explanation, or architecture queries, request overview files first: entrypoints, public facades, core data models, config/defaults, and any relevant specs or docs. Keep the list focused on the contracts that would be changed.\n" +
-	"FILE:<path>\n" +
-	"PREFIX:<path>#<literal prefix from the start of the target line>\n" +
-	"NEAR:<path>#<literal string from a nearby unique line or comment>\n"
+	"For planning, explanation, or architecture queries, request overview files first: entrypoints, public facades, core data models, config/defaults, and any relevant specs or docs. Keep the list focused on the contracts that would be changed.\n" + selectorGuidance + selectorOperators
 
 const followupSchemaAConstraint = "[TASK]\n%s\n\n[CONSTRAINT]\n" +
 	"This is a follow-up to an existing AI chat. Do not restart the discussion. Output ONLY a machine-readable list using the exact operators below. Output zero other text, explanations, or markdown formatting.\n" +
-	"Target the smallest additional context set needed to continue the existing conversation. Prefer directly relevant files or spans. Do not request broad overview files unless they are specifically needed for the follow-up.\n" +
-	"FILE:<path>\n" +
-	"PREFIX:<path>#<literal prefix from the start of the target line>\n" +
-	"NEAR:<path>#<literal string from a nearby unique line or comment>\n"
+	"Target the smallest additional context set needed to continue the existing conversation. Prefer directly relevant files or spans. Do not request broad overview files unless they are specifically needed for the follow-up.\n" + selectorGuidance + selectorOperators
 
 const codeSchemaBConstraint = "\n[TASK]\n%s\n\n[OUTPUT CONSTRAINT]\n" +
 	"This is the final-answer step. Source context has already been extracted.\n" +
 	"Based ONLY on the provided [CONTEXT] and [PROJECT TOPOLOGY], fulfill the [TASK].\n" +
-	"Do NOT respond with FILE:, PREFIX:, or NEAR: lines; those selector operators are only for Prompt 1 responses.\n" +
-	"\n" +
+	"Do NOT respond with selector lines; selector operators are only for Prompt 1 responses.\n\n" +
 	"Output format rules:\n" +
 	"1. For updated or new files:\n" +
 	"--- File: <path/from/project_root> ---\n" +
@@ -84,22 +66,19 @@ const codeSchemaBConstraint = "\n[TASK]\n%s\n\n[OUTPUT CONSTRAINT]\n" +
 const reviewSchemaBConstraint = "\n[TASK]\n%s\n\n[OUTPUT CONSTRAINT]\n" +
 	"This is the final-answer step for a code review.\n" +
 	"Based ONLY on the provided [CONTEXT] and [PROJECT TOPOLOGY], report findings, risks, or a clear no-issues result.\n" +
-	"Do NOT respond with FILE:, PREFIX:, or NEAR: lines; those selector operators are only for Prompt 1 responses.\n" +
-	"\n" +
+	"Do NOT respond with selector lines; selector operators are only for Prompt 1 responses.\n\n" +
 	"Output format rules:\n" +
 	"1. For findings, use concise bullets that include severity, file, and rationale.\n" +
 	"2. If no issues are found, state that clearly.\n" +
 	"3. Do not invent patches unless the user explicitly asks for a fix.\n"
 
 const DefaultExplorationTask = "Explore this project with an open mind. Explain what stands out, how its main parts fit together, and surface any interesting opportunities, risks, or improvements worth investigating."
-
 const DefaultFollowupPrompt = "Follow-up for an existing AI chat.\n\nDescription: "
 
 const designSchemaBConstraint = "\n[TASK]\n%s\n\n[OUTPUT CONSTRAINT]\n" +
 	"This is the final-answer step for a design task.\n" +
 	"Based ONLY on the provided [CONTEXT] and [PROJECT TOPOLOGY], explain the recommended approach, tradeoffs, or open decisions.\n" +
-	"Do NOT respond with FILE:, PREFIX:, or NEAR: lines; those selector operators are only for Prompt 1 responses.\n" +
-	"\n" +
+	"Do NOT respond with selector lines; selector operators are only for Prompt 1 responses.\n\n" +
 	"Output format rules:\n" +
 	"1. State the recommended design first.\n" +
 	"2. Call out important tradeoffs or follow-up decisions only when they materially affect the design.\n" +
@@ -107,8 +86,7 @@ const designSchemaBConstraint = "\n[TASK]\n%s\n\n[OUTPUT CONSTRAINT]\n" +
 
 const followupSchemaBConstraint = "\n[TASK]\n%s\n\n[OUTPUT CONSTRAINT]\n" +
 	"This is follow-up context for an existing conversation. Based ONLY on the provided context and topology, continue the user's current thread. Do not restate the full design, review, or implementation from scratch unless needed.\n" +
-	"Do NOT respond with FILE:, PREFIX:, or NEAR: lines; those selector operators are only for Prompt 1 responses.\n" +
-	"\n" +
+	"Do NOT respond with selector lines; selector operators are only for Prompt 1 responses.\n\n" +
 	"Output format rules:\n" +
 	"1. Continue the existing conversation directly from the provided follow-up context.\n" +
 	"2. Do not invent patches, findings, or a full design unless the user's follow-up specifically asks for them.\n" +
