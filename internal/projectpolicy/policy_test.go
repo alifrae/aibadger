@@ -102,3 +102,28 @@ func TestVerificationCommandRequiresPostApplyReview(t *testing.T) {
 		t.Fatal("expected verify.command without post-apply review to be rejected")
 	}
 }
+
+func TestNamedExternalSourcePolicy(t *testing.T) {
+	root := t.TempDir()
+	content := `[external.algorithm-core]
+root = "../algo_core"
+include = ["src/**", "include/**"]
+`
+	if err := os.WriteFile(filepath.Join(root, ConfigFileName), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	policy, err := Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(policy.External) != 1 {
+		t.Fatalf("got %d external sources: %+v", len(policy.External), policy.External)
+	}
+	source := policy.External[0]
+	if source.Label != "algorithm-core" || source.Root != "../algo_core" {
+		t.Fatalf("unexpected external source: %+v", source)
+	}
+	if len(source.Include) != 2 || source.Include[0] != "src/**" {
+		t.Fatalf("unexpected include filters: %+v", source.Include)
+	}
+}
