@@ -97,8 +97,13 @@ func Load(root string) (Policy, error) {
 	if err := validatePatterns(policy.Security.Warn); err != nil {
 		return Policy{}, fmt.Errorf("security.warn: %w", err)
 	}
-	if len(policy.Verify.Command) > 0 && strings.TrimSpace(policy.Verify.Command[0]) == "" {
-		return Policy{}, fmt.Errorf("verify.command: executable cannot be empty")
+	if len(policy.Verify.Command) > 0 {
+		if strings.TrimSpace(policy.Verify.Command[0]) == "" {
+			return Policy{}, fmt.Errorf("verify.command: executable cannot be empty")
+		}
+		if !policy.Write.PostApplyReview {
+			return Policy{}, fmt.Errorf("verify.command requires write.post_apply_review = true")
+		}
 	}
 	return policy, nil
 }
