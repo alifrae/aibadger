@@ -137,6 +137,11 @@ func (s *Session) ParseFinalResponse(input string) FinalResponseResult {
 }
 
 func (s *Session) ApplyWrites(updates []writer.FileUpdate) ([]writer.FileUpdate, []error) {
+	if len(updates) > 0 {
+		if err := s.Engine.ValidateWriteBase(); err != nil {
+			return nil, []error{err}
+		}
+	}
 	applied := make([]writer.FileUpdate, 0, len(updates))
 	var errs []error
 	for _, update := range updates {
