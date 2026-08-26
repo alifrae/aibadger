@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/PVRLabs/aibadger/internal/postapply"
 	"github.com/PVRLabs/aibadger/internal/protocol"
+	"github.com/PVRLabs/aibadger/internal/verification"
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -60,19 +62,23 @@ func (m Model) preparePostApplyIndependentReview() (tea.Model, tea.Cmd) {
 	if !m.postApplyActive() {
 		return m, nil
 	}
+	attachment := newGoalGitDiffAttachmentWithStats(
+		"Badger post-apply delta",
+		m.postApply.Diff,
+		len(m.postApply.Files),
+		m.postApply.Additions,
+		m.postApply.Deletions,
+	)
 	m.cfg.Focus = protocol.FocusReview
 	m.state = stateHome
 	m.goal = ""
 	m.err = nil
 	m.completion.suppressedKey = ""
 	m.setGoalInputValue("Review only the exact Badger-applied delta attached below. Check whether the landed changes match the intended task and identify concrete correctness, regression, or safety issues. Do not review unrelated pre-existing worktree changes.")
-	m.setGoalAttachments([]goalAttachment{newGoalGitDiffAttachmentWithStats(
-		"Badger post-apply delta",
-		m.postApply.Diff,
-		len(m.postApply.Files),
-		m.postApply.Additions,
-		m.postApply.Deletions,
-	)})
+	m.setGoalAttachments([]goalAttachment{attachment})
+	m.postApply = postapply.Result{}
+	m.verification = verification.Result{}
+	m.verificationRan = false
 	m.resizeGoalEditor()
 	m.focusGoalEditor()
 	m.paste.Blur()
