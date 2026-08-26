@@ -19,14 +19,28 @@ type SecurityPolicy struct {
 	BlockSecrets bool
 }
 
-type ContextPolicy struct{ AlwaysInclude []string }
-type DocsPolicy struct{ CanonicalRoots []string }
-type SessionPolicy struct{ RequireSnapshot bool }
+type ContextPolicy struct {
+	AlwaysInclude []string
+}
+
+type DocsPolicy struct {
+	CanonicalRoots []string
+}
+
+type SessionPolicy struct {
+	RequireSnapshot bool
+}
+
 type WritePolicy struct {
 	PatchOnly       bool
 	PostApplyReview bool
 }
-type VerifyPolicy struct{ Command []string }
+
+type VerifyPolicy struct {
+	// Command is an argv vector executed directly, without a shell, only after
+	// the user explicitly requests verification from the post-apply screen.
+	Command []string
+}
 
 type ExternalSourcePolicy struct {
 	Label   string
@@ -75,7 +89,9 @@ func Load(root string) (Policy, error) {
 		if len(parts) != 2 {
 			return Policy{}, fmt.Errorf("%s:%d: expected key = value", ConfigFileName, lineNumber)
 		}
-		if err := assign(&policy, section, strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1])); err != nil {
+		key := strings.TrimSpace(parts[0])
+		value := strings.TrimSpace(parts[1])
+		if err := assign(&policy, section, key, value); err != nil {
 			return Policy{}, fmt.Errorf("%s:%d: %w", ConfigFileName, lineNumber, err)
 		}
 	}
@@ -93,9 +109,7 @@ func Load(root string) (Policy, error) {
 		if strings.TrimSpace(source.Root) == "" {
 			return Policy{}, fmt.Errorf("external.%s.root is required", source.Label)
 		}
-		if filepath.IsAbs(source.Root) {
-			// Absolute roots are allowed for explicit local external context.
-		} else if strings.Contains(source.Root, "://") || strings.ContainsAny(source.Root, "*?[]") {
+		if !filepath.IsAbs(source.Root) && (strings.Contains(source.Root, "://") || strings.ContainsAny(source.Root, "*?[]")) {
 			return Policy{}, fmt.Errorf("external.%s.root must be a local directory path", source.Label)
 		}
 		if err := validatePatterns(source.Include); err != nil {
@@ -248,6 +262,7 @@ func validatePatterns(patterns []string) error {
 
 func (p Policy) Denies(path string) bool { return matchesAny(p.Security.Deny, path) }
 func (p Policy) Warns(path string) bool  { return matchesAny(p.Security.Warn, path) }
+
 func MatchGlob(pattern, path string) bool {
 	rx, err := compileGlob(pattern)
 	return err == nil && rx.MatchString(normalize(path))
