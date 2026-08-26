@@ -41,13 +41,24 @@ func TestNamedExternalRootUsesTagAliasAndIncludeFilter(t *testing.T) {
 func TestNamedExternalTaggedFileUsesCanonicalDisplayPath(t *testing.T) {
 	root := t.TempDir()
 	external := t.TempDir()
-	file := filepath.Join(external, "src", "core.rs")
-	if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
+	externalFile := filepath.Join(external, "src", "core.rs")
+	if err := os.MkdirAll(filepath.Dir(externalFile), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(file, []byte("pub fn detect() {}\n"), 0o644); err != nil {
+	if err := os.WriteFile(externalFile, []byte("pub fn external_detect() {}\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+
+	// A local path with the same label must not steal an explicitly named
+	// external @label reference.
+	localFile := filepath.Join(root, "algorithm-core", "src", "core.rs")
+	if err := os.MkdirAll(filepath.Dir(localFile), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(localFile, []byte("pub fn local_detect() {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
 	eng := &Engine{Root: root, Topology: &model.ProjectTopology{ExternalContext: []model.ExternalContext{{
 		Path:    "@algorithm-core",
 		AbsPath: external,
