@@ -20,9 +20,15 @@ import (
 
 var (
 	errPrompt2Excluded = errors.New("excluded from Prompt 2")
+
+	// ErrNoSafePrompt2Files is returned when every requested file is filtered
+	// out by Prompt 2 safety rules.
 	ErrNoSafePrompt2Files = errors.New("no safe files available for Prompt 2 after excluding binary and sensitive files")
 )
 
+// ExtractionError reports a mix of usable extraction results and failures.
+// When CanProceed is true, the caller may continue with the successful
+// extractions and surface the failures as a warning.
 type ExtractionError struct {
 	Failures   []string
 	Excluded   []string
@@ -40,6 +46,7 @@ func (e *ExtractionError) Error() string {
 	return strings.Join(parts, "; ")
 }
 
+// Extractor handles code extraction from the filesystem.
 type Extractor struct {
 	ProjectRoot     string
 	Topology        *model.ProjectTopology
@@ -53,6 +60,7 @@ type externalCommandResult struct {
 	displayPath string
 }
 
+// NewExtractor creates a new Extractor instance.
 func NewExtractor(root string, t *model.ProjectTopology) *Extractor {
 	var external []model.ExternalContext
 	if t != nil {
@@ -61,8 +69,7 @@ func NewExtractor(root string, t *model.ProjectTopology) *Extractor {
 	return &Extractor{ProjectRoot: root, Topology: t, ExternalContext: external}
 }
 
-// Extract performs bounded semantic-selector expansion first, then executes the
-// resulting concrete FILE/PREFIX/NEAR commands in parallel.
+// Extract performs the extraction for all commands in parallel.
 func (e *Extractor) Extract(commands []Command) ([]protocol.ExtractionResult, error) {
 	expanded, err := e.expandCommands(commands)
 	if err != nil {
@@ -84,14 +91,20 @@ func (e *Extractor) Extract(commands []Command) ([]protocol.ExtractionResult, er
 		wg.Add(1)
 		go func(idx int, c Command) {
 			defer wg.Done()
+
 			path, content, fullFile, err := e.processCommand(c)
 			if err != nil {
 				errs[idx] = err
 				return
 			}
-			results[idx] = protocol.ExtractionResult{Path: path, Content: content, FullFile: fullFile}
+			results[idx] = protocol.ExtractionResult{
+				Path:     path,
+				Content:  content,
+				FullFile: fullFile,
+			}
 		}(i, cmd)
 	}
+
 	wg.Wait()
 
 	extracted := make([]protocol.ExtractionResult, 0, len(commands))
@@ -124,10 +137,17 @@ func (e *Extractor) Extract(commands []Command) ([]protocol.ExtractionResult, er
 		return nil, ErrNoSafePrompt2Files
 	}
 	if len(extracted) > 0 && (len(failures) > 0 || excluded > 0) {
-		return extracted, &ExtractionError{Failures: append([]string(nil), failures...), Excluded: append([]string(nil), excludedFailures...), CanProceed: true}
+		return extracted, &ExtractionError{
+			Failures:   append([]string(nil), failures...),
+			Excluded:   append([]string(nil), excludedFailures...),
+			CanProceed: true,
+		}
 	}
 	if len(failures) > 0 {
-		return extracted, &ExtractionError{Failures: append([]string(nil), failures...), Excluded: append([]string(nil), excludedFailures...)}
+		return extracted, &ExtractionError{
+			Failures: append([]string(nil), failures...),
+			Excluded: append([]string(nil), excludedFailures...),
+		}
 	}
 	return extracted, nil
 }
@@ -138,6 +158,7 @@ func (e *Extractor) processCommand(cmd Command) (string, string, bool, error) {
 		content, fullFile, err := e.processLocalCommand(cmd, resolvedPath)
 		return cmd.Path, content, fullFile, err
 	}
+
 	externalResult, err := e.processExternalCommand(cmd)
 	if err != nil {
 		return "", "", false, err
@@ -145,6 +166,7 @@ func (e *Extractor) processCommand(cmd Command) (string, string, bool, error) {
 	if externalResult.matched {
 		return externalResult.displayPath, externalResult.content, externalResult.fullFile, nil
 	}
+
 	return "", "", false, fmt.Errorf("file not found: %s", cmd.Path)
 }
 
@@ -152,6 +174,7 @@ func (e *Extractor) processLocalCommand(cmd Command, resolvedPath string) (strin
 	if promptpolicy.IsSensitivePath(resolvedPath) {
 		return "", false, errPrompt2Excluded
 	}
+
 	absolutePath := filepath.Join(e.ProjectRoot, resolvedPath)
 	if !isWithinProjectRoot(e.ProjectRoot, absolutePath) {
 		return "", false, fmt.Errorf("file not found: %s", cmd.Path)
@@ -167,14 +190,17 @@ func (e *Extractor) processLocalCommand(cmd Command, resolvedPath string) (strin
 		}
 		return summarizeBinaryFile(resolvedPath, absolutePath, int(info.Size()), kind), false, nil
 	}
+
 	data, err := os.ReadFile(absolutePath)
 	if err != nil {
 		return "", false, fmt.Errorf("file not found: %s", cmd.Path)
 	}
+
 	content := string(data)
 	if cmd.Type == "FILE" {
 		return content, true, nil
 	}
+
 	extracted, fullFile, err := e.extractBlock(content, cmd.Type, cmd.Pattern)
 	if err != nil {
 		return "", false, err
@@ -224,6 +250,7 @@ func (e *Extractor) processExternalCommand(cmd Command) (externalCommandResult, 
 		result.fullFile = true
 		return result, nil
 	}
+
 	extracted, fullFile, err := e.extractBlock(content, cmd.Type, cmd.Pattern)
 	if err != nil {
 		return result, err
@@ -266,15 +293,30 @@ func isWithinProjectRoot(root, absPath string) bool {
 	return absClean == rootClean || strings.HasPrefix(absClean, rootClean+string(filepath.Separator))
 }
 
-var imageAssetExts = map[string]bool{".png": true, ".jpg": true, ".jpeg": true, ".gif": true, ".webp": true, ".ico": true}
+var imageAssetExts = map[string]bool{
+	".png":  true,
+	".jpg":  true,
+	".jpeg": true,
+	".gif":  true,
+	".webp": true,
+	".ico":  true,
+}
 
-func isImageAsset(path string) bool { return imageAssetExts[strings.ToLower(filepath.Ext(path))] }
+func isImageAsset(path string) bool {
+	return imageAssetExts[strings.ToLower(filepath.Ext(path))]
+}
 
 func summarizeBinaryFile(path string, absolutePath string, size int, kind string) string {
 	if kind == model.FileKindAsset && isImageAsset(path) {
 		meta := imageutil.GetMetadata(absolutePath)
 		if meta != nil {
-			lines := []string{"Binary file: " + path, "Kind: image", "Format: " + meta.Format, "Size: " + protocol.FormatFileSize(int64(size)), fmt.Sprintf("Dimensions: %dx%d", meta.Width, meta.Height)}
+			lines := []string{
+				"Binary file: " + path,
+				"Kind: image",
+				"Format: " + meta.Format,
+				"Size: " + protocol.FormatFileSize(int64(size)),
+				fmt.Sprintf("Dimensions: %dx%d", meta.Width, meta.Height),
+			}
 			if meta.AspectRatio != "" {
 				lines = append(lines, "Aspect ratio: "+meta.AspectRatio)
 			}
@@ -283,7 +325,10 @@ func summarizeBinaryFile(path string, absolutePath string, size int, kind string
 			}
 			return strings.Join(lines, "\n") + "\n"
 		}
-		return fmt.Sprintf("Binary file: %s\nKind: asset\nSize: %s\nMetadata: unavailable\n", path, protocol.FormatFileSize(int64(size)))
+
+		return fmt.Sprintf("Binary file: %s\nKind: asset\nSize: %s\nMetadata: unavailable\n",
+			path, protocol.FormatFileSize(int64(size)))
 	}
+
 	return fmt.Sprintf("Binary file: %s (%s, kind: %s)\n", path, protocol.FormatFileSize(int64(size)), kind)
 }
