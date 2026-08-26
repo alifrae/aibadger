@@ -14,6 +14,7 @@ type UpdateKind string
 const (
 	UpdateKindWrite  UpdateKind = "write"
 	UpdateKindDelete UpdateKind = "delete"
+	UpdateKindPatch  UpdateKind = "patch"
 )
 
 // FileUpdate represents a single file operation planned from the AI response.
@@ -45,6 +46,15 @@ func ParseAIResponseDetailed(input string) ParseResult {
 	inBlock := false
 	inMarkdownFence := false
 	currentKind := UpdateKindWrite
+
+	if patch, found, err := parsePatchBlock(input); found {
+		if err != nil {
+			errs = append(errs, err)
+		} else {
+			updates = append(updates, FileUpdate{Path: "<unified-diff>", Content: patch, Kind: UpdateKindPatch})
+		}
+		input = removePatchBlock(input)
+	}
 
 	lines := scanLines(input)
 	for _, rawLine := range lines {
@@ -145,6 +155,10 @@ func isProtocolExamplePath(path string) bool {
 
 // WriteFile writes the update to disk, creating parent directories if needed.
 func WriteFile(projectRoot string, update FileUpdate, mode WhitespaceMode) error {
+	if update.Kind == UpdateKindPatch {
+		return ApplyUnifiedDiff(projectRoot, update.Content)
+	}
+
 	fullPath, err := resolvePlannedPath(projectRoot, update.Path)
 	if err != nil {
 		return err
