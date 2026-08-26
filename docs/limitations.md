@@ -8,7 +8,8 @@ Badger is a context bridge, not an AI provider or autonomous coding agent.
 - `SYMBOL:` currently resolves a bounded span in a known file using Badger's existing local span extraction. It is not AST- or LSP-aware.
 - `REFERENCES:` and `SEARCH:` are bounded literal text searches, not compiler/type-aware reference queries. They return at most 12 matched-file spans.
 - `TESTS:` is a bounded literal search over likely test-file paths and returns at most 8 matched-file spans.
-- Discovery selectors inspect at most 5,000 eligible project files per request, skip files larger than 1 MiB, and intentionally skip common dependency/build/noise directories.
+- Discovery selectors inspect at most 5,000 eligible project files per request, skip symlinks and files larger than 1 MiB, and intentionally skip common dependency/build/noise directories.
+- A failed discovery selector does not discard successful selectors in the same request; it is reported through Badger's existing partial-success diagnostics.
 - Non-interactive review automation uses the stable `badger api review-context` operation.
 - Binary and generated files are intentionally excluded or minimized to keep prompts compact.
 - The P0 verifier supports one configured argv command; it does not yet select commands by changed path, language, or risk level.
@@ -16,7 +17,7 @@ Badger is a context bridge, not an AI provider or autonomous coding agent.
 
 ## Language topology
 
-P1 adds a first-class Cargo-aware Rust detector. Cargo manifests with a `[package]` section become Rust modules and common crate layout is surfaced for `src/`, `tests/`, `benches/`, `examples/`, and `build.rs`. Virtual workspace-only manifests are not incorrectly presented as crates.
+P1 adds a first-class Cargo-aware Rust detector. Cargo manifests with a `[package]` section become Rust modules and common crate layout is surfaced for `src/`, `tests/`, `benches/`, `examples/`, and `build.rs`. Virtual workspace-only manifests are not incorrectly presented as crates. Rust projects also report `Cargo` in the detected stack.
 
 This is **structural Cargo topology**, not a full Cargo metadata implementation:
 
