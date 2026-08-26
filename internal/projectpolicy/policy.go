@@ -43,9 +43,7 @@ type Policy struct {
 	Write    WritePolicy
 }
 
-func Default() Policy {
-	return Policy{Security: SecurityPolicy{BlockSecrets: true}}
-}
+func Default() Policy { return Policy{} }
 
 func Load(root string) (Policy, error) {
 	policy := Default()
