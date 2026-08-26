@@ -55,7 +55,7 @@ func ResolveFileFiltered(projectRoot string, contexts []model.ExternalContext, r
 	}
 	filtered := make([]FileMatch, 0, len(resolution.Matches))
 	for _, match := range resolution.Matches {
-		if contextAllows(match.Context, match.RelPath, false) {
+		if IsAllowedPath(match.Context, match.RelPath, false) {
 			filtered = append(filtered, match)
 		}
 	}
@@ -78,7 +78,9 @@ func IsDisplayPath(contexts []model.ExternalContext, path string) bool {
 	return false
 }
 
-func contextAllows(ctx model.ExternalContext, rel string, isDir bool) bool {
+// IsAllowedPath applies a named source's include filter. Legacy external
+// contexts have no Include list and therefore preserve their existing behavior.
+func IsAllowedPath(ctx model.ExternalContext, rel string, isDir bool) bool {
 	if len(ctx.Include) == 0 {
 		return true
 	}
@@ -104,7 +106,7 @@ func filterNamedTop(ctx model.ExternalContext, items []model.ExternalContextItem
 	}
 	filtered := make([]model.ExternalContextItem, 0, len(items))
 	for _, item := range items {
-		if contextAllows(ctx, item.Name, item.IsDir) {
+		if IsAllowedPath(ctx, item.Name, item.IsDir) {
 			filtered = append(filtered, item)
 		}
 	}
