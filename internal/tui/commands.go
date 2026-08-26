@@ -95,7 +95,10 @@ func reviewContinuationCmd(session *workflow.Session, commands []extractor.Comma
 
 func writeCmd(session *workflow.Session, updates []writer.FileUpdate) tea.Cmd {
 	return func() tea.Msg {
-		if session == nil || session.Engine == nil || !session.Engine.Policy.Write.PostApplyReview {
+		if session == nil || session.Engine == nil {
+			return writeDoneMsg{errs: []error{errors.New("write session is unavailable")}}
+		}
+		if !session.Engine.Policy.Write.PostApplyReview {
 			applied, errs := session.ApplyWrites(updates)
 			return writeDoneMsg{updates: applied, errs: errs}
 		}
