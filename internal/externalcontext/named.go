@@ -47,9 +47,25 @@ func LoadNamed(projectRoot string) ([]model.ExternalContext, error) {
 }
 
 // ResolveFileFiltered applies include filters after the normal safe resolver.
-// Callers that support named policy sources should use this function.
+// Explicit @label/path requests are scoped directly to that named root.
 func ResolveFileFiltered(projectRoot string, contexts []model.ExternalContext, requestPath string) FileResolution {
-	resolution := ResolveFile(projectRoot, contexts, requestPath)
+	searchContexts := contexts
+	searchPath := requestPath
+	normalized := filepath.ToSlash(filepath.Clean(strings.TrimSpace(requestPath)))
+	for _, ctx := range contexts {
+		if ctx.Label == "" {
+			continue
+		}
+		prefix := "@" + ctx.Label + "/"
+		if !strings.HasPrefix(normalized, prefix) {
+			continue
+		}
+		searchContexts = []model.ExternalContext{ctx}
+		searchPath = strings.TrimPrefix(normalized, prefix)
+		break
+	}
+
+	resolution := ResolveFile(projectRoot, searchContexts, searchPath)
 	if len(resolution.Matches) == 0 {
 		return resolution
 	}
