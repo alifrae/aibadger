@@ -3,6 +3,8 @@ package engine
 import (
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/PVRLabs/aibadger/internal/externalcontext"
@@ -260,12 +262,29 @@ func (e *Engine) resolveTaggedFiles(goal string) ([]protocol.TaggedFile, []strin
 		}
 		seen[resolved.AbsPath] = struct{}{}
 		paths = append(paths, protocol.TaggedFile{
-			Path:    resolved.Path,
+			Path:    e.taggedDisplayPath(resolved),
 			IsLocal: resolved.Source == taggedfile.SourceLocal,
 		})
 	}
 
 	return paths, warnings
+}
+
+func (e *Engine) taggedDisplayPath(resolved taggedfile.ResolvedPath) string {
+	if resolved.Source != taggedfile.SourceExternal || e == nil || e.Topology == nil {
+		return resolved.Path
+	}
+	for _, ctx := range e.Topology.ExternalContext {
+		if ctx.Label == "" || filepath.Clean(ctx.AbsPath) != filepath.Clean(resolved.SourceRoot) {
+			continue
+		}
+		rel, err := filepath.Rel(ctx.AbsPath, resolved.AbsPath)
+		if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			continue
+		}
+		return "@" + ctx.Label + "/" + filepath.ToSlash(rel)
+	}
+	return resolved.Path
 }
 
 // ExternalRoots returns configured external context roots for tagged-file
@@ -285,7 +304,11 @@ func (e *Engine) ExternalRoots() []taggedfile.ExternalRoot {
 			Path:    tagPath,
 			AbsPath: ctx.AbsPath,
 			IsOmitted: func(relPath, absPath string) bool {
-				return externalcontext.IsOmittedPath(ctx.AbsPath, absPath, relPath) || !externalcontext.IsAllowedPath(ctx, relPath, false)
+				isDir := false
+				if info, err := os.Stat(absPath); err == nil {
+					isDir = info.IsDir()
+				}
+				return externalcontext.IsOmittedPath(ctx.AbsPath, absPath, relPath) || !externalcontext.IsAllowedPath(ctx, relPath, isDir)
 			},
 		})
 	}
