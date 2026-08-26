@@ -134,6 +134,8 @@ func isLanguageSourceFile(language, path string) bool {
 		return isJavaSourceFile(name)
 	case "Python":
 		return isPythonSourceFile(name)
+	case "Rust":
+		return strings.EqualFold(filepath.Ext(name), ".rs")
 	case "JavaScript":
 		return isNodeSourceFile(name) && !isTypeScriptSourceFile(name)
 	case "TypeScript":

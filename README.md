@@ -21,7 +21,7 @@ Get **precise, token-efficient context** on demand without uploading your entire
 **Map → Extract → Apply:** Smart local context bridge that prepares focused codebase snippets for any LLM chat.
 
 > [!NOTE]
-> This fork's P0 hardening work is on `feat/p0-pcs-hardening`. Snapshot pinning, project policy, DLP rules, patch-only writes, exact post-apply review, and explicit verification are currently branch features rather than published upstream release features. See [Install](docs/install.md) for the source-build path.
+> This fork has two unreleased development layers: `feat/p0-pcs-hardening` adds snapshot pinning, project policy, DLP rules, patch-only writes, exact post-apply review, and explicit verification. `feat/p1-context-quality` is stacked on P0 and additionally adds Cargo-aware Rust topology, bounded discovery selectors, and named/provenanced external context. Build the branch you want to evaluate from source.
 
 ## How it works
 
@@ -30,7 +30,7 @@ Enter your goal. Badger builds a prompt.
 ↳ You copy it → paste into your AI chat
 
 **2. Extract**  
-AI replies asking for specific files.  
+AI replies asking for specific files or bounded discovery.  
 ↳ You copy that → paste back into Badger
 
 **3. Apply**  
@@ -38,6 +38,8 @@ Badger fetches those files, builds a second prompt.
 ↳ You copy it → paste into AI → review before writing
 
 With the optional hardening policy, Badger can additionally pin the repository snapshot, block sensitive egress, require unified patches, and show the exact landed diff before declaring the task complete.
+
+P1 can orient itself to Cargo crates, request bounded `SYMBOL`/`REFERENCES`/`TESTS`/`SEARCH` context, and identify explicitly named external sources with include scopes and Git revisions.
 
 ✓ Fully local — nothing leaves your machine until you copy it  
 ✓ You control every paste and every write
@@ -49,7 +51,8 @@ With the optional hardening policy, Badger can additionally pin the repository s
 - **Token efficient** — Send only the context the reviewer actually asks for
 - **Precise & lightweight** — Built in Go, fast, minimal overhead
 - **Specialized modes** — `review` and `design` for common workflows
-- **Optional hardening** — project policy, snapshot consistency, egress rules, guarded patches, and post-apply review on the P0 branch
+- **Optional hardening** — project policy, snapshot consistency, egress rules, guarded patches, and post-apply review on P0
+- **Optional context quality** — Cargo topology, bounded discovery selectors, and named external-source provenance on P1
 
 ## Install
 
@@ -67,14 +70,14 @@ Quick curl install:
 curl -fsSL https://raw.githubusercontent.com/PVRLabs/aibadger/main/install.sh | sh
 ```
 
-### Build this hardening branch from source
+### Build a fork development branch from source
 
-The P0 features in this fork are not yet in the published upstream binaries.
+P0/P1 features are not yet in the published upstream binaries.
 
 ```bash
 git clone https://github.com/alifrae/aibadger.git
 cd aibadger
-git switch feat/p0-pcs-hardening
+git switch feat/p1-context-quality   # or feat/p0-pcs-hardening
 mkdir -p bin
 go build -o ./bin/badger ./cmd/badger
 ```
@@ -88,9 +91,9 @@ cd /path/to/your-project
 
 See [docs/install.md](docs/install.md) for Windows, source builds, verification, and avoiding confusion between upstream and fork binaries. See [Using Badger From Source](docs/source-usage.md) for the runtime model and examples against another checkout.
 
-Also available with an official [VS Code companion](https://marketplace.visualstudio.com/items?itemName=pvrlabs.ai-badger). The extension follows the upstream product; do not assume it exposes unreleased fork-only hardening features.
+Also available with an official [VS Code companion](https://marketplace.visualstudio.com/items?itemName=pvrlabs.ai-badger). The extension follows the upstream product; do not assume it exposes unreleased fork-only features.
 
-## Optional project hardening
+## Optional project hardening and external context
 
 Create `.badger.toml` in the target repository root:
 
@@ -108,11 +111,15 @@ post_apply_review = true
 
 [verify]
 command = ["go", "test", "./..."]
+
+[external.algorithm-core]
+root = "../algo_core"
+include = ["src/**", "include/**"]
 ```
 
-No `.badger.toml` means existing Badger behavior is preserved.
+No `.badger.toml` means existing Badger behavior is preserved. Named `[external.<label>]` sections are P1 features.
 
-See [Project Policy](docs/project-policy.md) for every setting and dependency. A copy-ready PCS-style policy is in [`docs/examples/pcs.badger.toml`](docs/examples/pcs.badger.toml).
+See [Project Policy](docs/project-policy.md) for every setting and dependency. A copy-ready PCS-style P0 policy is in [`docs/examples/pcs.badger.toml`](docs/examples/pcs.badger.toml).
 
 ## Agent Skills
 
@@ -125,11 +132,22 @@ guide](skills/README.md) for installation, usage, and details.
 1. Run `badger` (or the explicit source-built fork binary) in your project root.
 2. Type your goal.
 3. Copy **Prompt 1** → paste into your AI chat.
-4. When the AI asks for files, copy its selector response → paste back into Badger.
+4. When the AI asks for context, copy its selector response → paste back into Badger.
 5. Copy **Prompt 2** → paste back to the AI.
 6. Paste the AI's final response into Badger.
 7. Review and approve the proposed write.
 8. If `post_apply_review` is enabled, inspect the **actual landed diff**, optionally press `V` for configured verification or `R` for an independent review, then press Enter to finish.
+
+P1 selectors include:
+
+```text
+SYMBOL:path/to/file#FrameProvider
+REFERENCES:FrameProvider
+TESTS:FrameProvider
+SEARCH:open_live_source
+```
+
+These are bounded literal/local operations, not an LSP or compiler-semantic index. See the [Protocol Reference](docs/protocol.md).
 
 ### Specialized Modes
 
@@ -143,6 +161,8 @@ Full usage: [docs/usage.md](docs/usage.md)
 ## PCS example
 
 The [PCS End-to-End Tutorial](docs/pcs-tutorial.md) walks through a concrete engineering task: exposing existing detection-probability statistics through PCS's agent-facing semantic API for Pia. It covers source installation, a hardened PCS policy, snapshot-aware selectors, DLP decisions, guarded patch application, exact landed-diff review, targeted verification, and independent ChatGPT review.
+
+P1 can improve that workflow further by using named external roots for algorithm/requirements repositories and bounded selectors when the current PCS topology does not already identify the relevant implementation or tests.
 
 ## Learn More
 

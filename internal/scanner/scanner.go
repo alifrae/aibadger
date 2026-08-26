@@ -33,7 +33,11 @@ func (s *Scanner) Scan() (*model.ProjectTopology, error) {
 	if err != nil {
 		return nil, err
 	}
-	topology.ExternalContext = externalContext
+	namedExternalContext, err := externalcontext.LoadNamed(s.ProjectRoot)
+	if err != nil {
+		return nil, err
+	}
+	topology.ExternalContext = append(externalContext, namedExternalContext...)
 
 	var wg sync.WaitGroup
 	var mu sync.Mutex
@@ -46,6 +50,7 @@ func (s *Scanner) Scan() (*model.ProjectTopology, error) {
 		NewJavaDetector().Detect,
 		nodeDetector.Detect,
 		NewPythonDetector().Detect,
+		NewRustDetector().Detect,
 	}
 	for _, detect := range detectors {
 		wg.Add(1)

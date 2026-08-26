@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/PVRLabs/aibadger/internal/egress"
+	"github.com/PVRLabs/aibadger/internal/externalcontext"
 	"github.com/PVRLabs/aibadger/internal/extractor"
 	"github.com/PVRLabs/aibadger/internal/projectpolicy"
 	"github.com/PVRLabs/aibadger/internal/protocol"
@@ -56,6 +57,21 @@ func (e *Engine) policyPromptSuffix() string {
 	}
 	if len(e.Policy.Docs.CanonicalRoots) > 0 {
 		lines = append(lines, "Canonical docs: "+strings.Join(e.Policy.Docs.CanonicalRoots, ", "))
+	}
+	if e.Topology != nil {
+		for _, ctx := range e.Topology.ExternalContext {
+			if ctx.Label == "" {
+				continue
+			}
+			line := "External source: " + ctx.Path + " [read-only]"
+			if ctx.GitRevision != "" {
+				line += " revision=" + shortRevision(ctx.GitRevision)
+			}
+			if len(ctx.Include) > 0 {
+				line += " include=" + strings.Join(ctx.Include, ",")
+			}
+			lines = append(lines, line)
+		}
 	}
 	if e.Policy.Write.PatchOnly {
 		lines = append(lines, "Write mode: unified diff only. For code changes use --- Patch --- / --- End Patch --- around a standard unified diff with repository-relative a/ and b/ paths.")
@@ -145,6 +161,13 @@ func shortSnapshot(id string) string {
 	return id[:12]
 }
 
+func shortRevision(id string) string {
+	if len(id) <= 12 {
+		return id
+	}
+	return id[:12]
+}
+
 func (e *Engine) validateUpdatePolicy(update writer.FileUpdate) error {
 	if e == nil {
 		return nil
@@ -163,6 +186,9 @@ func (e *Engine) validateUpdatePolicy(update writer.FileUpdate) error {
 	for _, path := range paths {
 		if e.Policy.Denies(path) {
 			return fmt.Errorf("write blocked by .badger.toml security.deny: %s", path)
+		}
+		if e.Topology != nil && externalcontext.IsDisplayPath(e.Topology.ExternalContext, path) {
+			return externalContextWriteError(path)
 		}
 		if e.isExternalContextPath(path) {
 			return externalContextWriteError(path)

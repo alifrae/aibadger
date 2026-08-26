@@ -3,6 +3,8 @@ package engine
 import (
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/PVRLabs/aibadger/internal/externalcontext"
@@ -131,7 +133,7 @@ func (e *Engine) GenerateMapDetailed(goal string) (string, []string) {
 	return prompt, warnings
 }
 
-// ParseCommands parses FILE/PREFIX/NEAR extraction commands.
+// ParseCommands parses extraction selector commands.
 func (e *Engine) ParseCommands(input string) []extractor.Command {
 	clean, err := e.parseSnapshotInput(input)
 	if err != nil {
@@ -250,7 +252,10 @@ func (e *Engine) resolveTaggedFiles(goal string) ([]protocol.TaggedFile, []strin
 	paths := make([]protocol.TaggedFile, 0, len(refs))
 	seen := make(map[string]struct{}, len(refs))
 	for _, ref := range refs {
-		resolved, err := taggedfile.Resolve(e.Root, ref.Path, externalRoots)
+		resolved, handled, err := e.resolveNamedTaggedFile(ref.Path)
+		if !handled {
+			resolved, err = taggedfile.Resolve(e.Root, ref.Path, externalRoots)
+		}
 		if err != nil {
 			warnings = append(warnings, err.Error())
 			continue
@@ -260,12 +265,63 @@ func (e *Engine) resolveTaggedFiles(goal string) ([]protocol.TaggedFile, []strin
 		}
 		seen[resolved.AbsPath] = struct{}{}
 		paths = append(paths, protocol.TaggedFile{
-			Path:    resolved.Path,
+			Path:    e.taggedDisplayPath(resolved),
 			IsLocal: resolved.Source == taggedfile.SourceLocal,
 		})
 	}
 
 	return paths, warnings
+}
+
+func (e *Engine) resolveNamedTaggedFile(path string) (taggedfile.ResolvedPath, bool, error) {
+	if e == nil || e.Topology == nil {
+		return taggedfile.ResolvedPath{}, false, nil
+	}
+	normalized := filepath.ToSlash(filepath.Clean(strings.TrimSpace(path)))
+	for _, ctx := range e.Topology.ExternalContext {
+		if ctx.Label == "" {
+			continue
+		}
+		if normalized != ctx.Label && !strings.HasPrefix(normalized, ctx.Label+"/") {
+			continue
+		}
+		requestPath := "@" + normalized
+		if normalized == ctx.Label {
+			return taggedfile.ResolvedPath{}, true, fmt.Errorf("tagged file path is a directory: %s", requestPath)
+		}
+		resolution := externalcontext.ResolveFileFiltered(e.Root, []model.ExternalContext{ctx}, requestPath)
+		if len(resolution.Matches) == 0 {
+			return taggedfile.ResolvedPath{}, true, fmt.Errorf("tagged file path does not exist: %s", requestPath)
+		}
+		if len(resolution.Matches) > 1 {
+			return taggedfile.ResolvedPath{}, true, fmt.Errorf("ambiguous tagged file reference %q", requestPath)
+		}
+		match := resolution.Matches[0]
+		return taggedfile.ResolvedPath{
+			Path:       requestPath,
+			AbsPath:    match.AbsPath,
+			Source:     taggedfile.SourceExternal,
+			SourceRoot: ctx.AbsPath,
+		}, true, nil
+	}
+	return taggedfile.ResolvedPath{}, false, nil
+}
+
+func (e *Engine) taggedDisplayPath(resolved taggedfile.ResolvedPath) string {
+	if resolved.Source != taggedfile.SourceExternal || e == nil || e.Topology == nil {
+		return resolved.Path
+	}
+	for _, ctx := range e.Topology.ExternalContext {
+		if ctx.Label == "" || filepath.Clean(ctx.AbsPath) != filepath.Clean(resolved.SourceRoot) {
+			continue
+		}
+		rel, err := filepath.Rel(ctx.AbsPath, resolved.AbsPath)
+		if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			continue
+		}
+		return "@" + ctx.Label + "/" + filepath.ToSlash(rel)
+	}
+	return resolved.Path
 }
 
 // ExternalRoots returns configured external context roots for tagged-file
@@ -277,11 +333,19 @@ func (e *Engine) ExternalRoots() []taggedfile.ExternalRoot {
 	roots := make([]taggedfile.ExternalRoot, 0, len(e.Topology.ExternalContext))
 	for _, ctx := range e.Topology.ExternalContext {
 		ctx := ctx // capture for closure
+		tagPath := ctx.Path
+		if ctx.Label != "" {
+			tagPath = ctx.Label // tagged-file parser already consumes the leading @
+		}
 		roots = append(roots, taggedfile.ExternalRoot{
-			Path:    ctx.Path,
+			Path:    tagPath,
 			AbsPath: ctx.AbsPath,
 			IsOmitted: func(relPath, absPath string) bool {
-				return externalcontext.IsOmittedPath(ctx.AbsPath, absPath, relPath)
+				isDir := false
+				if info, err := os.Stat(absPath); err == nil {
+					isDir = info.IsDir()
+				}
+				return externalcontext.IsOmittedPath(ctx.AbsPath, absPath, relPath) || !externalcontext.IsAllowedPath(ctx, relPath, isDir)
 			},
 		})
 	}

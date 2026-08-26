@@ -2,10 +2,10 @@
 
 Badger can load an optional `.badger.toml` from the project root. When the file is absent, existing Badger behavior is preserved.
 
-The policy is intentionally small and local. It controls context-routing hints, egress protection, repository snapshot pinning, guarded writes, post-apply review, and explicit verification without connecting Badger to an AI provider.
+The policy is intentionally small and local. It controls context-routing hints, egress protection, repository snapshot pinning, guarded writes, post-apply review, explicit verification, and named read-only external context without connecting Badger to an AI provider.
 
 > [!IMPORTANT]
-> These P0 policy features currently live on the `feat/p0-pcs-hardening` branch of the `alifrae/aibadger` fork. Build that branch from source until the functionality is released upstream.
+> P0 hardening lives on `feat/p0-pcs-hardening`. P1 context-quality features—including named external sources—live on the stacked `feat/p1-context-quality` branch of the `alifrae/aibadger` fork. Build the branch you want to evaluate from source until the functionality is released upstream.
 
 ## Complete example
 
@@ -30,9 +30,13 @@ post_apply_review = true
 
 [verify]
 command = ["go", "test", "./..."]
+
+[external.algorithm-core]
+root = "../algo_core"
+include = ["src/**", "include/**"]
 ```
 
-The current parser intentionally supports only a small TOML subset: section headers, booleans, and **single-line arrays of double-quoted strings**. Unknown settings are rejected instead of silently ignored.
+The current parser intentionally supports only a small TOML subset: section headers, booleans, double-quoted strings, and **single-line arrays of double-quoted strings**. Unknown settings are rejected instead of silently ignored.
 
 ## Settings reference
 
@@ -47,6 +51,8 @@ The current parser intentionally supports only a small TOML subset: section head
 | `write.patch_only` | boolean | `false` | Rejects whole-file write/delete blocks and requires a guarded unified patch. |
 | `write.post_apply_review` | boolean | `false` | Captures and displays the exact delta introduced by a Badger apply before task completion. |
 | `verify.command` | argv string array | unset | Adds an explicit `V` verification action to the post-apply screen. Requires `write.post_apply_review = true`. |
+| `external.<label>.root` | string | unset | Adds a named local directory as read-only external context. |
+| `external.<label>.include` | glob array | `[]` | Restricts a named external source to the matching relative paths. |
 
 ## Context and documentation hints
 
@@ -63,9 +69,52 @@ Badger tells the model that these locations matter, but the model should still r
 
 This avoids turning repository governance files into permanent prompt overhead.
 
+## Named external sources
+
+P1 adds named, read-only external context directly to `.badger.toml`:
+
+```toml
+[external.algorithm-core]
+root = "../algo_core"
+include = ["src/**", "include/**"]
+
+[external.requirements]
+root = "/absolute/path/to/requirements"
+include = ["api/**", "system/**"]
+```
+
+The section suffix is the source label. Labels must be simple names without spaces, slashes, backslashes, or `@`.
+
+Each named source has these properties:
+
+- `root` is required and must identify a local directory. Relative paths are resolved from the project root; absolute local paths are also accepted.
+- `include` is optional. When omitted, the existing external-context omission rules apply to the complete root. When present, only matching relative paths may be resolved, tagged, or suggested.
+- the source remains read-only. Patch/write targets using the displayed external path are rejected.
+- Badger records the external repository's current Git `HEAD` when the directory is a Git worktree and exposes a shortened revision in Prompt 1 policy metadata.
+- named sources appear as `@label` in external-context/provenance output.
+
+Example selector paths:
+
+```text
+FILE:@algorithm-core/src/detection/energy.rs
+SYMBOL:@algorithm-core/src/detection/energy.rs#compute_energy
+```
+
+For a goal-editor file tag, use normal tagged-file syntax:
+
+```text
+Review the PCS boundary against @algorithm-core/src/detection/energy.rs
+```
+
+The tag parser consumes the first `@`; Badger maps the remaining `algorithm-core/...` path back to the named source internally.
+
+Legacy `.badger-context` remains supported. Named sources are additive rather than a migration requirement. Prefer named sources when source identity, include scoping, and Git provenance matter.
+
+Named external provenance is evidence about **which checkout Badger read**. It does not prove that the external code is correct or compatible with the main project.
+
 ## Path globs
 
-`security.deny` and `security.warn` use repository-relative glob patterns.
+`security.deny`, `security.warn`, and `external.<label>.include` use slash-normalized glob patterns.
 
 Examples:
 
@@ -77,7 +126,7 @@ warn = ["calibration/**"]
 
 `**/*.dat` matches both root-level and nested `.dat` files.
 
-Absolute paths and parent traversal such as `../outside/**` are rejected when the policy loads.
+Absolute paths and parent traversal such as `../outside/**` are rejected for security patterns and include patterns. External `root` itself may intentionally point to a sibling directory such as `../algo_core`.
 
 ## Egress controls
 
@@ -241,6 +290,25 @@ post_apply_review = true
 command = ["python", "-m", "pytest", "-q", "tests/api"]
 ```
 
+### PCS with a named algorithm source
+
+```toml
+[security]
+deny = ["recordings/**", "**/*.pcap", "**/*.dat"]
+block_secrets = true
+
+[session]
+require_snapshot = true
+
+[write]
+patch_only = true
+post_apply_review = true
+
+[external.algorithm-core]
+root = "../algo_core"
+include = ["dsp/**", "include/**"]
+```
+
 ## Configuration errors
 
 Badger fails closed on unsupported or internally inconsistent policy settings.
@@ -258,6 +326,8 @@ command = ["go", "test", "./..."]
 ```
 
 The second example is invalid because `write.post_apply_review` is not enabled.
+
+A named external source without `root`, a label containing spaces/slashes, or an unsafe `include` pattern is also rejected.
 
 ## PCS profile
 

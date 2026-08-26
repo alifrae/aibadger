@@ -28,6 +28,8 @@ func detectedStack(root string) []string {
 			found["Gradle"] = true
 		case "go.mod":
 			found["Go Modules"] = true
+		case "Cargo.toml":
+			found["Cargo"] = true
 		case "package.json":
 			found["Node.js"] = true
 		}
@@ -38,7 +40,7 @@ func detectedStack(root string) []string {
 			found[name] = true
 		}
 	}
-	stackOrder := []string{"Maven", "Gradle", "Go Modules", "Node.js", "React", "Next.js", "Vue", "Vite", "NestJS"}
+	stackOrder := []string{"Maven", "Gradle", "Go Modules", "Cargo", "Node.js", "React", "Next.js", "Vue", "Vite", "NestJS"}
 	var stack []string
 	for _, name := range stackOrder {
 		if found[name] {

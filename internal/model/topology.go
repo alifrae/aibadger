@@ -24,9 +24,12 @@ type ProjectTopology struct {
 // ExternalContext represents an explicitly configured read-only context
 // directory outside, or separate from, the normal project source topology.
 type ExternalContext struct {
-	Path    string                `json:"path"`     // As listed in .badger-context, cleaned for display
-	AbsPath string                `json:"abs_path"` // Absolute path used for local validation only
-	Top     []ExternalContextItem `json:"top,omitempty"`
+	Path        string                `json:"path"`     // Display path; named sources use @label
+	AbsPath     string                `json:"abs_path"` // Absolute path used for local validation only
+	Label       string                `json:"label,omitempty"`
+	GitRevision string                `json:"git_revision,omitempty"`
+	Include     []string              `json:"include,omitempty"`
+	Top         []ExternalContextItem `json:"top,omitempty"`
 }
 
 // ExternalContextItem stores a compact top-level summary entry for Prompt 1.

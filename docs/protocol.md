@@ -25,7 +25,8 @@ submissions retain their supplied content.
 - **SOURCE TREE** — packages with file names and sizes, grouped by priority
   (docs, config, source code, assets).
 - **EXTERNAL CONTEXT** — optional read-only context roots configured outside
-  the normal project tree.
+  the normal project tree. P1 named sources can also expose a stable label,
+  include scope, and current Git revision when available.
 - **USER TAGGED FILES** — optional user-selected files you pin into the goal
   with `@path/to/file`; the section appears only when those references resolve.
   References inside fenced code, diffs, or attachment payloads are treated as
@@ -39,28 +40,61 @@ Copy **Prompt 1 (Map)** and paste it into an AI chat.
 
 ## Step 2: Extract
 
-The AI reads the topology and replies with selectors for the files it needs:
+The AI reads the topology and replies with selectors for the context it needs:
 
 - `FILE:path` — extracts the entire file.
 - `PREFIX:path#literal prefix` — finds the first line whose trimmed content starts with the prefix, then extracts a logical code block.
 - `NEAR:path#literal string` — finds the first line containing the literal string, then extracts a logical code block.
+- `SYMBOL:path#name` — requests a bounded span around a named/distinctive symbol in a **known file**. Today this resolves through the same local span machinery as `NEAR`; it is not an AST query.
+- `REFERENCES:literal` — searches project-local text for the literal and returns bounded `NEAR` spans from at most 12 matching files.
+- `TESTS:literal` — searches likely test files for the literal and returns bounded `NEAR` spans from at most 8 matching files.
+- `SEARCH:literal text` — bounded project-local literal search returning `NEAR` spans from at most 12 matching files.
 
-Repo-local files are resolved first. If no repo-local file matches a `FILE:`
-request, Badger may resolve it against configured read-only external context
-using the exact displayed path, a path relative to the external root, a suffix
-such as `docs/spec.md`, or a unique basename. Ambiguous external matches fail
-with a candidate list instead of guessing.
+The discovery selectors are deliberately **literal and bounded**. They do not use an LSP, compiler symbol table, AST index, or semantic type system. `REFERENCES:FrameProvider` means “find a small set of text files containing `FrameProvider`,” not “return every type-aware reference to this symbol.”
+
+Discovery searches inspect at most 5,000 eligible project files per request, skip known noisy/generated dependency directories, skip binary/assets, and skip files larger than 1 MiB. Normal Prompt 2 safety/egress filtering still runs on the resulting extracts.
+
+Prefer the cheapest selector that already identifies the necessary context. A typical ordering is:
+
+1. `FILE` / `PREFIX` / `NEAR` when the topology already tells you where to look;
+2. `SYMBOL` when the file is known but a bounded declaration/implementation span is enough;
+3. `TESTS`, `REFERENCES`, or `SEARCH` only when local discovery is actually needed.
+
+Example:
+
+```text
+FILE:internal/scanner/scanner.go
+SYMBOL:internal/scanner/scanner.go#Scan
+TESTS:Scan
+REFERENCES:NewRustDetector
+SEARCH:Cargo.toml
+```
+
+### External context paths
+
+Repo-local files are resolved first. If no repo-local file matches a file/span selector, Badger may resolve it against configured read-only external context.
+
+Legacy `.badger-context` supports the existing relative/display/suffix resolution rules. P1 named sources configured in `.badger.toml` have explicit display identities such as:
+
+```text
+@algorithm-core
+```
+
+so selectors can be explicit:
+
+```text
+FILE:@algorithm-core/src/detection/energy.rs
+SYMBOL:@algorithm-core/src/detection/energy.rs#compute_energy
+```
+
+Named-source `include` rules are enforced during extraction and tagged-file resolution. External sources remain read-only and cannot be patch targets. If the external root is a Git worktree, Prompt 1 policy metadata also shows the current revision so the AI can distinguish evidence from different checkouts.
+
+Ambiguous external matches fail with a candidate list instead of guessing.
 
 Extraction attempts to include relevant comments preceding the matched line.
 Badger searches for structural blocks (balanced braces, indentation, or
 declarations) within a lookahead limit; if structural detection fails, it
 falls back to a 10-line window (3 before, 6 after the match).
-
-```text
-FILE:internal/scanner/scanner.go
-PREFIX:internal/scanner/scanner.go#func ScanProject(
-NEAR:internal/scanner/scanner.go#detect project language
-```
 
 Copy the AI's reply and paste it back into Badger. Badger extracts the
 relevant code and produces **Prompt 2 (Code Context)** — the extracted files or
@@ -92,8 +126,7 @@ Prompt 1 are byte-for-byte equivalent.
 
 ## Step 3: Apply
 
-Copy **Prompt 2 (Code Context)** back to the AI chat. The AI reads the code and can write back
-using:
+Copy **Prompt 2 (Code Context)** back to the AI chat. Without a patch-only project policy, the legacy AI write protocol remains:
 
 - `--- File: <path> ---` ... content ... `--- End File ---` — creates or updates a file.
 - `--- Delete File: <path> ---` — deletes a file.
@@ -105,3 +138,5 @@ package main
 func main() {}
 --- End File ---
 ```
+
+When `.badger.toml` enables `write.patch_only = true`, the AI must instead return a guarded unified diff. See [Project Policy](project-policy.md) for patch validation, snapshot pinning, and post-apply review behavior.
