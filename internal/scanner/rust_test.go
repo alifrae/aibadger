@@ -17,13 +17,36 @@ func TestRustDetectorDiscoversWorkspaceCrates(t *testing.T) {
 	mustWriteRustTest(t, filepath.Join(root, "crates/bridge/build.rs"), "fn main() {}\n")
 
 	modules, err := NewRustDetector().Detect(root)
-	if err != nil { t.Fatal(err) }
-	if len(modules) != 2 { t.Fatalf("got %d Rust modules, want 2: %+v", len(modules), modules) }
-	if modules[0].Name != "pcs-pybridge" && modules[1].Name != "pcs-pybridge" { t.Fatalf("missing bridge crate: %+v", modules) }
-	if modules[0].Name != "pcs-core" && modules[1].Name != "pcs-core" { t.Fatalf("missing core crate: %+v", modules) }
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(modules) != 2 {
+		t.Fatalf("got %d Rust modules, want 2: %+v", len(modules), modules)
+	}
+	if modules[0].Name != "pcs-pybridge" && modules[1].Name != "pcs-pybridge" {
+		t.Fatalf("missing bridge crate: %+v", modules)
+	}
+	if modules[0].Name != "pcs-core" && modules[1].Name != "pcs-core" {
+		t.Fatalf("missing core crate: %+v", modules)
+	}
 	for _, module := range modules {
-		if module.Language != "Rust" { t.Fatalf("module language=%q", module.Language) }
-		if module.FileCount == 0 { t.Fatalf("empty crate module: %+v", module) }
+		if module.Language != "Rust" {
+			t.Fatalf("module language=%q", module.Language)
+		}
+		if module.FileCount == 0 {
+			t.Fatalf("empty crate module: %+v", module)
+		}
+	}
+
+	topology, err := NewScanner(root).Scan()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if topology.PrimaryLanguage != "Rust" {
+		t.Fatalf("primary language=%q, want Rust", topology.PrimaryLanguage)
+	}
+	if !containsRustTestString(topology.Stack, "Cargo") {
+		t.Fatalf("Cargo missing from stack: %+v", topology.Stack)
 	}
 }
 
@@ -31,12 +54,29 @@ func TestRustDetectorSkipsVirtualWorkspaceManifest(t *testing.T) {
 	root := t.TempDir()
 	mustWriteRustTest(t, filepath.Join(root, "Cargo.toml"), "[workspace]\nmembers = []\n")
 	modules, err := NewRustDetector().Detect(root)
-	if err != nil { t.Fatal(err) }
-	if len(modules) != 0 { t.Fatalf("virtual workspace should not become a crate: %+v", modules) }
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(modules) != 0 {
+		t.Fatalf("virtual workspace should not become a crate: %+v", modules)
+	}
+}
+
+func containsRustTestString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }
 
 func mustWriteRustTest(t *testing.T, path, content string) {
 	t.Helper()
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil { t.Fatal(err) }
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil { t.Fatal(err) }
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
 }
