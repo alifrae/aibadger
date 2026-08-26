@@ -80,6 +80,9 @@ func (e *Engine) parseSnapshotInput(input string) (string, error) {
 	if err := snapshot.ValidateExpected(id, e.Snapshot, e.Policy.Session.RequireSnapshot); err != nil {
 		return "", err
 	}
+	if err := e.ValidateSnapshotCurrent(); err != nil {
+		return "", err
+	}
 	return selectors, nil
 }
 
@@ -111,18 +114,26 @@ func (e *Engine) filterEgress(extractions []protocol.ExtractionResult) ([]protoc
 	return kept, notices, nil
 }
 
-// ValidateWriteBase rejects writes when snapshot pinning is enabled and the
-// repository changed after Badger built the context supplied to the model.
-func (e *Engine) ValidateWriteBase() error {
+// ValidateSnapshotCurrent rejects continuation or writes when snapshot pinning
+// is enabled and the repository changed after Prompt 1 was generated.
+func (e *Engine) ValidateSnapshotCurrent() error {
 	if e == nil || !e.Policy.Session.RequireSnapshot || e.Snapshot.ID == "" {
 		return nil
 	}
 	current, err := snapshot.Capture(e.Root)
 	if err != nil {
-		return fmt.Errorf("validating write snapshot: %w", err)
+		return fmt.Errorf("validating repository snapshot: %w", err)
 	}
 	if current.ID != e.Snapshot.ID {
-		return fmt.Errorf("repository changed after context generation; refusing to write against stale snapshot %s (current %s)", shortSnapshot(e.Snapshot.ID), shortSnapshot(current.ID))
+		return fmt.Errorf("repository changed after Prompt 1; expected snapshot %s, current %s; regenerate context before continuing", shortSnapshot(e.Snapshot.ID), shortSnapshot(current.ID))
+	}
+	return nil
+}
+
+// ValidateWriteBase rejects stale write batches before the first file changes.
+func (e *Engine) ValidateWriteBase() error {
+	if err := e.ValidateSnapshotCurrent(); err != nil {
+		return fmt.Errorf("refusing stale write: %w", err)
 	}
 	return nil
 }
