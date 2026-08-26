@@ -44,10 +44,14 @@ include = ["src/**"]
 	if len(blocked.Matches) != 0 {
 		t.Fatalf("excluded file resolved: %+v", blocked.Matches)
 	}
-	for _, path := range []string{"@algorithm-core/src/core.rs", "algorithm-core/src/core.rs"} {
-		if !IsDisplayPath(contexts, path) {
-			t.Fatalf("named display alias not recognized: %s", path)
-		}
+	if !IsDisplayPath(contexts, "@algorithm-core/src/core.rs") {
+		t.Fatal("canonical named display path not recognized")
+	}
+	if IsDisplayPath(contexts, "algorithm-core/src/core.rs") {
+		t.Fatal("local-looking label path should not be treated as the external display namespace")
+	}
+	if !IsAllowedPath(ctx, "src", true) {
+		t.Fatal("include filter should allow a parent directory needed for completion")
 	}
 }
 
