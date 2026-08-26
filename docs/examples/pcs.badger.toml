@@ -1,0 +1,25 @@
+# Example hardened Badger policy for a PCS-style engineering repository.
+# Copy to <PCS>/.badger.toml and adapt paths/verification to the real checkout.
+
+[context]
+always_include = ["AGENTS.md", "docs/architecture/", "docs/api/"]
+
+[docs]
+canonical_roots = ["docs/architecture/", "docs/development/", "docs/api/"]
+
+[security]
+deny = ["recordings/**", "customer_data/**", "**/*.pcap", "**/*.dat", "**/*.ifscan", "**/*.mcap"]
+warn = ["calibration/**", "requirements/confidential/**"]
+block_secrets = true
+
+[session]
+require_snapshot = true
+
+[write]
+patch_only = true
+post_apply_review = true
+
+# Replace this with the real targeted PCS verification entrypoint.
+# Keep it deterministic and preferably non-mutating.
+[verify]
+command = ["python", "-m", "pytest", "-q", "tests/api"]

@@ -313,6 +313,8 @@ func (m Model) viewWritePreview() string {
 		kind := "write"
 		if update.Kind == writer.UpdateKindDelete {
 			kind = "delete"
+		} else if update.Kind == writer.UpdateKindPatch {
+			kind = "patch"
 		}
 		lines = append(lines, fmt.Sprintf("  [%s] %s", kind, update.Path))
 	}
@@ -329,6 +331,9 @@ func (m Model) viewWritePreview() string {
 }
 
 func (m Model) viewTextResponse() string {
+	if m.postApplyActive() {
+		return m.viewPostApplyReview()
+	}
 	response := strings.TrimSpace(m.response)
 	if response == "" {
 		response = "(empty response)"
@@ -409,6 +414,7 @@ func (m Model) viewHelp() string {
 		fmt.Sprintf("4. Confirm copying %s, or use the manual-copy fallback.", codeContextPromptKind),
 		"5. Paste the final AI response and press Enter.",
 		"6. Review file writes and confirm with y.",
+		"7. Inspect the exact landed delta; optionally press V to verify or R for an independent review.",
 		"",
 		"Press Enter to return home.",
 	}, "\n")

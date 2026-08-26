@@ -14,10 +14,12 @@ import (
 	"github.com/PVRLabs/aibadger/internal/engine"
 	"github.com/PVRLabs/aibadger/internal/externalcontext"
 	"github.com/PVRLabs/aibadger/internal/extractor"
+	"github.com/PVRLabs/aibadger/internal/postapply"
 	"github.com/PVRLabs/aibadger/internal/protocol"
 	"github.com/PVRLabs/aibadger/internal/reviewtask"
 	"github.com/PVRLabs/aibadger/internal/startup"
 	"github.com/PVRLabs/aibadger/internal/taggedfile"
+	"github.com/PVRLabs/aibadger/internal/verification"
 	"github.com/PVRLabs/aibadger/internal/workflow"
 	"github.com/PVRLabs/aibadger/internal/writer"
 	"github.com/charmbracelet/bubbles/cursor"
@@ -98,6 +100,9 @@ type Model struct {
 	pendingSafetyExclusions []string
 	updates                 []writer.FileUpdate
 	response                string
+	postApply               postapply.Result
+	verification            verification.Result
+	verificationRan         bool
 
 	onboardingCompletionSaved bool
 
@@ -160,8 +165,13 @@ type contextDoneMsg struct {
 }
 
 type writeDoneMsg struct {
-	updates []writer.FileUpdate
-	errs    []error
+	updates   []writer.FileUpdate
+	errs      []error
+	postApply postapply.Result
+}
+
+type verificationDoneMsg struct {
+	result verification.Result
 }
 
 type badgePermissionPromptMsg struct{}
@@ -472,33 +482,55 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.err = nil
 		return m, nil
 	case writeDoneMsg:
-		m.state = stateHome
-		m.goal = ""
-		m.schemaA = ""
-		m.schemaB = ""
-		m.commands = nil
-		m.updates = nil
-		m.response = ""
-		m.setGoalAttachments(nil)
-		m.setGoalInputValue("")
-		m.resizeGoalEditor()
-		m.completion.suppressedKey = ""
-		m.focusGoalEditor()
+		m.postApply = msg.postApply
+		m.verification = verification.Result{}
+		m.verificationRan = false
 		m.paste.Blur()
 		if len(msg.errs) > 0 {
-			m.status = errorMessage(fmt.Sprintf("Finished with %d apply error(s).", len(msg.errs)))
-		} else {
-			writes, deletes := countAppliedKinds(msg.updates)
+			m.err = errors.Join(msg.errs...)
+			if !m.postApplyActive() {
+				return m.returnHome(errorMessage(fmt.Sprintf("Finished with %d apply error(s).", len(msg.errs))))
+			}
+			m.state = stateTextResponse
+			m.status = warningMessage(fmt.Sprintf("Apply finished with %d error(s). Review the exact landed delta before continuing.", len(msg.errs)))
+			return m, nil
+		}
+		writes, deletes := countAppliedKinds(msg.updates)
+		if !m.postApplyActive() {
+			var status tuiMessage
 			switch {
 			case writes > 0 && deletes > 0:
-				m.status = successMessage(fmt.Sprintf("Applied %d write(s) and %d delete(s). Ready for the next goal.", writes, deletes))
+				status = successMessage(fmt.Sprintf("Applied %d write(s) and %d delete(s). Ready for the next goal.", writes, deletes))
 			case deletes > 0:
-				m.status = successMessage(fmt.Sprintf("Deleted %d file(s). Ready for the next goal.", deletes))
+				status = successMessage(fmt.Sprintf("Deleted %d file(s). Ready for the next goal.", deletes))
 			default:
-				m.status = successMessage(fmt.Sprintf("Wrote %d file(s). Ready for the next goal.", writes))
+				status = successMessage(fmt.Sprintf("Wrote %d file(s). Ready for the next goal.", writes))
 			}
+			return m.returnHome(status)
 		}
-		return m, textarea.Blink
+		m.err = nil
+		m.state = stateTextResponse
+		switch {
+		case writes > 0 && deletes > 0:
+			m.status = successMessage(fmt.Sprintf("Applied %d write(s) and %d delete(s). Review the exact landed changes before finishing.", writes, deletes))
+		case deletes > 0:
+			m.status = successMessage(fmt.Sprintf("Deleted %d file(s). Review the exact landed changes before finishing.", deletes))
+		default:
+			m.status = successMessage(fmt.Sprintf("Wrote %d file(s). Review the exact landed changes before finishing.", writes))
+		}
+		return m, nil
+	case verificationDoneMsg:
+		m.verification = msg.result
+		m.verificationRan = true
+		m.state = stateTextResponse
+		if msg.result.Passed {
+			m.status = successMessage(fmt.Sprintf("Verification passed: %s", formatCommand(msg.result.Command)))
+			m.err = nil
+		} else {
+			m.status = warningMessage(fmt.Sprintf("Verification failed: %s", formatCommand(msg.result.Command)))
+			m.err = nil
+		}
+		return m, nil
 	case badgePermissionPromptMsg:
 		return m, nil
 	case badgeFetchingMsg:
@@ -932,6 +964,9 @@ func (m Model) returnHome(status tuiMessage) (tea.Model, tea.Cmd) {
 	m.pendingSafetyExclusions = nil
 	m.updates = nil
 	m.response = ""
+	m.postApply = postapply.Result{}
+	m.verification = verification.Result{}
+	m.verificationRan = false
 	m.badgeLogins = nil
 	m.badgeTotal = 0
 	m.badgeGazillion = false
